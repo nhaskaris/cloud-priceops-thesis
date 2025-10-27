@@ -1,19 +1,22 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
+from .views import (
+    CloudProviderViewSet, ServiceCategoryViewSet, CloudServiceViewSet,
+    RegionViewSet, PricingModelViewSet, CurrencyViewSet,
+    PricingDataViewSet, PriceHistoryViewSet, PriceAlertViewSet
+)
 
-# Create router and register viewsets
 router = DefaultRouter()
-router.register(r'providers', views.CloudProviderViewSet)
-router.register(r'services', views.CloudServiceViewSet)
-router.register(r'regions', views.RegionViewSet)
-router.register(r'pricing', views.PricingDataViewSet)
-router.register(r'price-history', views.PriceHistoryViewSet)
-router.register(r'price-alerts', views.PriceAlertViewSet, basename='pricealert')
-router.register(r'management', views.PricingManagementViewSet, basename='pricing-management')
-
-app_name = 'cloud_pricing'
+router.register(r'providers', CloudProviderViewSet)
+router.register(r'categories', ServiceCategoryViewSet)
+router.register(r'services', CloudServiceViewSet)
+router.register(r'regions', RegionViewSet)
+router.register(r'pricing-models', PricingModelViewSet)
+router.register(r'currencies', CurrencyViewSet)
+router.register(r'pricing', PricingDataViewSet, basename='pricing')
+router.register(r'price-history', PriceHistoryViewSet)
+router.register(r'price-alerts', PriceAlertViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ]
