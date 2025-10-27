@@ -1,0 +1,44 @@
+services:
+  web:
+    build: .
+    container_name: django_api
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn your_project_name.wsgi:application --bind 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env       # Django app env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - .:/app
+    restart: always
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    env_file:
+      - ./.env               # Root env for DB credentials
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: redis_cache
+    restart: always
+    env_file:
+      - ./.env               # Root env for Redis (if needed)
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
