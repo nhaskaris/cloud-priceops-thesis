@@ -17,5 +17,5 @@ Including another URLconf
 from django.urls import path, include
 
 urlpatterns = [
-    path('', include('cloud_pricing.urls')),
+    path('', include('cloud_pricing.api.urls')),
 ]

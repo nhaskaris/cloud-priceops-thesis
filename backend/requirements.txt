@@ -14,3 +14,6 @@ requests==2.31.0
 # Background tasks
 celery==5.3.4
 redis==5.0.1
+
+# WSGI server
+gunicorn
