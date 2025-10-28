@@ -1,2 +1,7 @@
 *venv
 *.env
+__pycache__/
+*.pyc
+
+# Celery beat schedule file
+celerybeat-schedule

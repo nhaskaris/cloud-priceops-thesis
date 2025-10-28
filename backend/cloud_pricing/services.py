@@ -6,7 +6,6 @@ import requests
 import time
 import logging
 from django.conf import settings
-from .tasks import log_api_call
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +21,8 @@ class InfracostPricingService:
             raise ValueError("INFRACOST_API_KEY is not set in settings or environment")
 
     def _post_query(self, query: str, provider: str):
+        from .tasks import log_api_call
+
         """Execute GraphQL query and log results"""
         headers = {"X-Api-Key": self.api_key, "Content-Type": "application/json"}
         start_time = time.time()

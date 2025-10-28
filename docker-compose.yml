@@ -40,5 +40,56 @@ services:
     ports:
       - "6379:6379"
 
+  celery:
+    build: ./backend/
+    container_name: celery_worker
+    command: >
+      sh -c "celery -A core worker --loglevel=info -E"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - web
+      - redis
+      - db
+    volumes:
+      - ./backend:/app
+    restart: always
+
+  celery_beat:
+    build: ./backend/
+    container_name: celery_beat
+    command: >
+      sh -c "celery -A core beat --loglevel=info"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - redis
+      - db
+    volumes:
+      - ./backend:/app
+    restart: always
+
+  flower:
+    container_name: flower
+    build:
+      context: ./backend/
+    restart: always
+    command: >
+      celery -A core flower 
+            --port=5555 
+            --address=0.0.0.0 
+            --broker=${REDIS_URL} 
+            --basic_auth=${FLOWER_USER}:${FLOWER_PASSWORD}
+    ports:
+      - "5555:5555"
+    env_file:
+      - ./backend/.env
+    environment:
+      - FLOWER_USER=${FLOWER_USER}
+      - FLOWER_PASSWORD=${FLOWER_PASSWORD}
+    depends_on:
+      - redis
+      - celery
+
 volumes:
   postgres_data:

@@ -43,7 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'rest_framework',
     'corsheaders',
-    'cloud_pricing',
+    'cloud_pricing.apps.CloudPricingConfig',
 ]
 
 MIDDLEWARE = [
