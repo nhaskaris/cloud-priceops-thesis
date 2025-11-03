@@ -1,7 +1,7 @@
 services:
   web:
     build: ./backend/
-    container_name: django_api
+    container_name: priceops_django_api
     command: >
       sh -c "python manage.py migrate &&
              gunicorn core.wsgi:application --bind 0.0.0.0:8000"
@@ -18,7 +18,7 @@ services:
 
   db:
     image: postgres:15
-    container_name: postgres_db
+    container_name: priceops_postgres_db
     restart: always
     env_file:
       - ./.env               # Root env for DB credentials
@@ -33,7 +33,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: redis_cache
+    container_name: priceops_redis_cache
     restart: always
     env_file:
       - ./.env               # Root env for Redis (if needed)
@@ -42,7 +42,7 @@ services:
 
   celery:
     build: ./backend/
-    container_name: celery_worker
+    container_name: priceops_celery_worker
     command: >
       sh -c "celery -A core worker --loglevel=info -E"
     env_file:
@@ -57,7 +57,7 @@ services:
 
   celery_beat:
     build: ./backend/
-    container_name: celery_beat
+    container_name: priceops_celery_beat
     command: >
       sh -c "celery -A core beat --loglevel=info"
     env_file:
@@ -70,7 +70,7 @@ services:
     restart: always
 
   flower:
-    container_name: flower
+    container_name: priceops_flower
     build:
       context: ./backend/
     restart: always
