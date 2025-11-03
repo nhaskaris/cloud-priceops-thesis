@@ -1,5 +1,5 @@
 services:
-  web:
+  backend:
     build: ./backend/
     container_name: priceops_django_api
     command: >
@@ -8,7 +8,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ./backend/.env       # Django app env
+      - ./backend/.env
+      - ./.env               # Root env for DB credentials
     depends_on:
       - db
       - redis
@@ -47,8 +48,9 @@ services:
       sh -c "celery -A core worker --loglevel=info -E"
     env_file:
       - ./backend/.env
+      - ./.env               # Root env for DB credentials
     depends_on:
-      - web
+      - backend
       - redis
       - db
     volumes:
@@ -62,6 +64,7 @@ services:
       sh -c "celery -A core beat --loglevel=info"
     env_file:
       - ./backend/.env
+      - ./.env               # Root env for DB credentials
     depends_on:
       - redis
       - db
@@ -84,6 +87,7 @@ services:
       - "5555:5555"
     env_file:
       - ./backend/.env
+      - ./.env               # Root env for DB credentials
     environment:
       - FLOWER_USER=${FLOWER_USER}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD}
