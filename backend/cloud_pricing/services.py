@@ -20,6 +20,23 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _truncate(value, max_length, field_name=None):
+    """Safely truncate values that would exceed DB column limits.
+
+    Logs a warning when truncation happens so we can detect problematic inputs.
+    """
+    if value is None:
+        return value
+    s = str(value)
+    if len(s) > max_length:
+        if field_name:
+            logger.warning("Truncating value for %s to %d chars (original length %d)", field_name, max_length, len(s))
+        else:
+            logger.warning("Truncating value to %d chars (original length %d)", max_length, len(s))
+        return s[:max_length]
+    return s
+
 # Default to the Infracost pricing GraphQL endpoint (see their example curl):
 # curl https://pricing.api.infracost.io/graphql -X POST -H 'X-Api-Key: YOUR_API_KEY' ...
 INFRACOST_GQL_URL = os.environ.get("INFRACOST_GQL_URL", "https://pricing.api.infracost.io/graphql")
@@ -198,9 +215,12 @@ class InfracostPricingService:
         """Map a product node and its prices into our models. Returns number of PricingData records created/updated."""
         # Basic fields
         service_code = node.get("service") or node.get("vendorName")
+        # truncate fields that map to varchar(50) DB columns to avoid DataError
+        service_code = _truncate(service_code, 50, field_name='CloudService.service_code')
         service_name = node.get("service") or service_code
         product_family = node.get("productFamily")
         region_code = node.get("region") or "global"
+        region_code = _truncate(region_code, 50, field_name='Region.region_code')
 
         # Build attributes dict
         attrs = {a.get("key"): a.get("value") for a in node.get("attributes", [])}
@@ -240,8 +260,11 @@ class InfracostPricingService:
                 )
 
                 instance_type = attrs.get("instanceType") or attrs.get("machineType") or attrs.get("instance_type", "")
+                instance_type = _truncate(instance_type, 50, field_name='PricingData.instance_type')
                 operating_system = attrs.get("operatingSystem") or attrs.get("operating_system", "")
+                operating_system = _truncate(operating_system, 50, field_name='PricingData.operating_system')
                 tenancy = attrs.get("tenancy", "")
+                tenancy = _truncate(tenancy, 20, field_name='PricingData.tenancy')
 
                 with transaction.atomic():
                     obj, created = PricingData.objects.update_or_create(
@@ -284,21 +307,30 @@ class InfracostPricingService:
                 price_per_unit=old_price,
                 change_percentage=change_pct,
             )
-
-
 class CloudPricingOrchestrator:
     """Orchestrator that uses Infracost as source for providers."""
 
     def __init__(self):
-        self.infracost = InfracostPricingService(vendor_name="aws")
+        # lazy storage for Infracost services per vendor to avoid constructing until API key available
+        self._infracost_clients = {}
 
     def fetch_provider_pricing(self, provider_name):
-        if provider_name.lower() == "aws":
-            return self.infracost.fetch_and_save(filters={"vendorName": "aws"})
+        name = provider_name.lower()
+        if name in ("aws", "azure", "gcp"):
+            # prefer Infracost GraphQL pricing
+            try:
+                client = self._infracost_clients.get(name)
+                if not client:
+                    client = InfracostPricingService(vendor_name=name)
+                    self._infracost_clients[name] = client
+                return client.fetch_and_save(filters={"vendorName": name})
+            except Exception:
+                logger.exception('Infracost fetch failed for %s; aborting (no retail fallback configured)', name)
+                return 0
         return 0
 
     def fetch_all_pricing_data(self):
         total = 0
-        for provider_name in ["aws"]:
+        for provider_name in ["aws", "azure", "gcp"]:
             total += self.fetch_provider_pricing(provider_name)
         return total
