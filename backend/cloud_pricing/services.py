@@ -150,15 +150,15 @@ class InfracostPricingService:
                 filter_literal = '{' + ','.join(filter_parts) + '}' if filter_parts else '{}'
 
                 q = f'''query {{
-    products(filter: {filter_literal}) {{
-        vendorName
-        service
-        productFamily
-        region
-        attributes {{ key value }}
-        prices(filter: {{}}) {{ USD unit description purchaseOption startUsageAmount endUsageAmount termPurchaseOption termLength termOfferingClass }}
-    }}
-}}'''
+                        products(filter: {filter_literal}) {{
+                            vendorName
+                            service
+                            productFamily
+                            region
+                            attributes {{ key value }}
+                            prices(filter: {{}}) {{ USD unit description purchaseOption startUsageAmount endUsageAmount termPurchaseOption termLength termOfferingClass }}
+                        }}
+                    }}'''
 
         # We return the raw query string and no variables
         return q, None

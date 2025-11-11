@@ -4,7 +4,7 @@ services:
     container_name: priceops_django_api
     command: >
       sh -c "python manage.py migrate &&
-             gunicorn core.wsgi:application --bind 0.0.0.0:8000"
+             python manage.py runserver 0.0.0.0:8000"
     ports:
       - "8000:8000"
     env_file:

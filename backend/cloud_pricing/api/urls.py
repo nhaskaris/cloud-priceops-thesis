@@ -5,6 +5,7 @@ from .views import (
     RegionViewSet, PricingModelViewSet, CurrencyViewSet,
     PricingDataViewSet, PriceHistoryViewSet, PriceAlertViewSet
 )
+from .views import TCOView
 
 router = DefaultRouter()
 router.register(r'providers', CloudProviderViewSet)
@@ -19,4 +20,5 @@ router.register(r'price-alerts', PriceAlertViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('api/v1/tco/', TCOView.as_view(), name='tco'),
 ]

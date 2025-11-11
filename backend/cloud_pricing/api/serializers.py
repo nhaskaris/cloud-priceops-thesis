@@ -94,3 +94,16 @@ class PriceAlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = PriceAlert
         fields = "__all__"
+
+
+class TCORequestSerializer(serializers.Serializer):
+    name = serializers.CharField(required=False, allow_blank=True)
+    # Allow users to specify resource intent instead of exact instance type
+    RESOURCE_CHOICES = ('cpu', 'gpu', 'memory', 'storage', 'generic')
+    resource_type = serializers.ChoiceField(choices=RESOURCE_CHOICES, required=False, default='cpu')
+    cpu_hours_per_month = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=720)
+    storage_gb = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=0)
+    egress_gb = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=0)
+    duration_months = serializers.IntegerField(required=False, default=12)
+    region_preferences = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    providers = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)

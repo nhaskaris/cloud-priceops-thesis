@@ -1,8 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, AllowAny
+from rest_framework.views import APIView
 from django.conf import settings
+from django.db.models import Q
 from ..models import (
     CloudProvider, CloudService, Region, ServiceCategory,
     PricingModel, Currency, PricingData, PriceHistory, PriceAlert
@@ -12,8 +14,10 @@ from .serializers import (
     ServiceCategorySerializer, PricingModelSerializer, CurrencySerializer,
     PricingDataSerializer, PriceHistorySerializer, PriceAlertSerializer
 )
+from .serializers import TCORequestSerializer
 import requests
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +147,165 @@ class PricingDataViewSet(viewsets.ModelViewSet):
         except requests.RequestException as e:
             logger.error(f"Infracost API error: {e}")
             return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class TCOView(APIView):
+    """Simple TCO estimator endpoint for the frontend MVP."""
+    # Explicitly allow anonymous access so the frontend can call this endpoint
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = TCORequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        # frontend sends resource_type (cpu/gpu/memory/storage)
+        resource_type = (data.get('resource_type') or 'cpu').lower()
+        cpu_hours = float(data.get('cpu_hours_per_month', 720))
+        duration_months = int(data.get('duration_months', 12))
+        regions = data.get('region_preferences') or []
+        providers = data.get('providers') or ['aws', 'azure', 'gcp']
+
+        results = []
+        for prov in providers:
+            # find the best matching pricing record in DB using resource intent heuristics
+            # If regions list is empty, search across all regions and pick the cheapest one
+            # select records that have some kind of price available (hourly, unit, or monthly)
+            qs = PricingData.objects.filter(
+                provider__name__iexact=prov,
+                is_active=True
+            ).filter(
+                Q(price_per_hour__isnull=False) | Q(price_per_unit__isnull=False) | Q(price_per_month__isnull=False)
+            )
+
+            # Simple heuristics over JSON attributes / instance_type to match resource intent
+            if resource_type == 'gpu':
+                qs = qs.filter(
+                    Q(attributes__icontains='"gpu"') |
+                    Q(attributes__icontains='accelerator') |
+                    Q(instance_type__icontains='gpu')
+                )
+            elif resource_type == 'memory':
+                qs = qs.filter(
+                    Q(attributes__icontains='memory') |
+                    Q(attributes__icontains='ram') |
+                    Q(instance_type__icontains='mem')
+                )
+            elif resource_type == 'storage':
+                qs = qs.filter(
+                    Q(attributes__icontains='storage') |
+                    Q(attributes__icontains='ssd') |
+                    Q(attributes__icontains='hdd')
+                )
+            else:  # cpu / generic
+                # Include records whose product_family mentions "Compute Instance",
+                # or otherwise exclude obvious GPU/accelerator entries.
+                qs = qs.filter(
+                    Q(product_family__icontains='compute instance'))
+
+            if regions:
+                qs = qs.filter(region__region_code__in=regions)
+            # Order by price ascending (cheapest first), then prefer the most recent effective_date
+            qs = qs.filter(price_per_unit__isnull=False).filter(price_per_unit__gt=0).order_by('price_per_unit')
+            rec = qs.first()
+
+            if rec is None: continue
+
+            print(rec.price_per_unit, rec.price_unit, rec.product_family)
+
+            # Derive hourly/monthly/yearly from price_per_unit and price_unit heuristics
+            ppu = rec.price_per_unit
+            unit = (rec.price_unit or "").strip().lower()
+            price_per_hour = None
+            monthly = None
+            yearly = None
+
+            try:
+                if ppu is not None:
+                    ppu = float(ppu)
+                    # Use cpu_hours as the number of billable hours per month (default from request)
+                    hours_per_month = float(cpu_hours) if cpu_hours else 720.0
+
+                    # Storage / per-GiB units are hard to convert to instance costs without a size;
+                    # treat as non-applicable unless they are per-hour
+                    if "gib" in unit or "gb" in unit or "byte" in unit:
+                        if "hour" in unit:
+                            price_per_hour = ppu
+                            monthly = price_per_hour * hours_per_month
+                        elif "second" in unit:
+                            price_per_hour = ppu * 3600.0
+                            monthly = price_per_hour * hours_per_month
+                        elif "month" in unit:
+                            # per-GiB-month -> cannot convert to instance cost without size, leave None
+                            price_per_hour = None
+                            monthly = None
+                        else:
+                            price_per_hour = None
+                            monthly = None
+
+                    # Per-month pricing (e.g. "month")
+                    elif "month" in unit:
+                        monthly = ppu
+                        price_per_hour = monthly / hours_per_month if hours_per_month else None
+
+                    # Per-minute pricing
+                    elif "min" in unit or "minute" in unit:
+                        price_per_hour = ppu * 60.0
+                        monthly = price_per_hour * hours_per_month
+
+                    # Per-second pricing
+                    elif "sec" in unit or "second" in unit:
+                        price_per_hour = ppu * 3600.0
+                        monthly = price_per_hour * hours_per_month
+
+                    # Per-hour / per-hr variants
+                    elif "hour" in unit or "hr" in unit or "hrs" in unit or "/hour" in unit:
+                        price_per_hour = ppu
+                        monthly = price_per_hour * hours_per_month
+
+                    # Ambiguous/single-unit/quantity -> assume per-hour (common for compute instances)
+                    elif unit in ("", "1", "quantity") or re.match(r"^\d+$", unit):
+                        price_per_hour = ppu
+                        monthly = price_per_hour * hours_per_month
+
+                    # Fallback to existing explicit fields if we couldn't derive from unit
+                    else:
+                        price_per_hour = rec.price_per_hour if rec.price_per_hour is not None else None
+                        monthly = rec.price_per_month if rec.price_per_month is not None else (price_per_hour * hours_per_month if price_per_hour else None)
+
+                    if monthly is not None:
+                        yearly = monthly * 12.0
+                    else:
+                        yearly = rec.price_per_year if rec.price_per_year is not None else None
+
+                else:
+                    # no price_per_unit available: fall back to explicit fields
+                    price_per_hour = rec.price_per_hour if rec.price_per_hour is not None else None
+                    monthly = rec.price_per_month if rec.price_per_month is not None else None
+                    yearly = rec.price_per_year if rec.price_per_year is not None else None
+
+            except (TypeError, ValueError):
+                price_per_hour = rec.price_per_hour if rec.price_per_hour is not None else None
+                monthly = rec.price_per_month if rec.price_per_month is not None else None
+                yearly = rec.price_per_year if rec.price_per_year is not None else None
+
+            results.append({
+                'provider': prov,
+                'region': rec.region.region_code if rec else None,
+                'instance_type': rec.instance_type if rec else None,
+                'price_per_hour': price_per_hour,
+                'monthly_cost': monthly,
+                'yearly_cost': yearly,
+            })
+
+        # find best (lowest monthly) where available
+        best = None
+        available = [r for r in results if r['monthly_cost'] is not None]
+        if available:
+            best = min(available, key=lambda x: x['monthly_cost'])
+
+        return Response({'results': results, 'best': best})
 
 
 class PriceHistoryViewSet(viewsets.ModelViewSet):
