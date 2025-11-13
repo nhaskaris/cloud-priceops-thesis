@@ -43,7 +43,9 @@ function App() {
     }
 
     try {
-      const resp = await fetch('/api/v1/tco/', {
+      const base = (import.meta.env.VITE_APP_BACKEND_URL as string) || ''
+      const url = base ? `${base.replace(/\/$/, '')}/api/v1/tco/` : '/api/v1/tco/'
+      const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -95,5 +95,15 @@ services:
       - redis
       - celery
 
+  front:
+    container_name: front
+    restart: always
+    build:
+      context: ./frontend/.
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
