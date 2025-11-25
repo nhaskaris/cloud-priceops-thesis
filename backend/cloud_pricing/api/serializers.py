@@ -1,8 +1,9 @@
 from rest_framework import serializers
 from ..models import (
     CloudProvider, CloudService, Region, ServiceCategory,
-    PricingModel, Currency, PricingData, PriceHistory, PriceAlert
+    PricingModel, Currency, NormalizedPricingData, PriceHistory, PriceAlert
 )
+from ..models import RawPricingData
 
 
 class CloudProviderSerializer(serializers.ModelSerializer):
@@ -75,7 +76,7 @@ class PricingDataSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = PricingData
+        model = NormalizedPricingData
         fields = "__all__"
 
 
@@ -93,6 +94,21 @@ class PriceAlertSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PriceAlert
+        fields = "__all__"
+
+
+class RawPricingDataSerializer(serializers.ModelSerializer):
+    provider = CloudProviderSerializer(read_only=True)
+    provider_id = serializers.PrimaryKeyRelatedField(
+        queryset=CloudProvider.objects.all(), write_only=True, source="provider"
+    )
+    normalized = PricingDataSerializer(read_only=True)
+    normalized_id = serializers.PrimaryKeyRelatedField(
+        queryset=NormalizedPricingData.objects.all(), write_only=True, source="normalized", allow_null=True, required=False
+    )
+
+    class Meta:
+        model = RawPricingData
         fields = "__all__"
 
 

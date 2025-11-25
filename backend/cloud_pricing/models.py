@@ -103,7 +103,7 @@ class Currency(models.Model):
     code = models.CharField(max_length=3, unique=True)  # USD, EUR, GBP
     name = models.CharField(max_length=50)
     symbol = models.CharField(max_length=5)
-    exchange_rate_to_usd = models.DecimalField(max_digits=10, decimal_places=6, default=1.0)
+    exchange_rate_to_usd = models.DecimalField(max_digits=10, decimal_places=10, null=True, blank=True)
     last_updated = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -113,8 +113,8 @@ class Currency(models.Model):
         return f"{self.code} - {self.name}"
 
 
-class PricingData(models.Model):
-    """Main pricing record for Infracost and other providers"""
+class NormalizedPricingData(models.Model):
+    """Main normalized pricing record for Infracost and other providers"""
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE)
     service = models.ForeignKey(CloudService, on_delete=models.CASCADE)
     region = models.ForeignKey(Region, on_delete=models.CASCADE)
@@ -128,10 +128,10 @@ class PricingData(models.Model):
     tenancy = models.CharField(max_length=20, blank=True)
 
     # Pricing values
-    price_per_hour = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    price_per_month = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    price_per_year = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    price_per_unit = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    price_per_year = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_unit = models.CharField(max_length=50, blank=True)
 
     # Flexible metadata
@@ -163,10 +163,10 @@ class PricingData(models.Model):
 
 class PriceHistory(models.Model):
     """Historical pricing data"""
-    pricing_data = models.ForeignKey(PricingData, on_delete=models.CASCADE, related_name='history')
-    price_per_hour = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    price_per_month = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    price_per_unit = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE, related_name='history')
+    price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     change_percentage = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     recorded_at = models.DateTimeField(auto_now_add=True)
 
@@ -186,7 +186,7 @@ class PriceAlert(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='price_alerts')
-    pricing_data = models.ForeignKey(PricingData, on_delete=models.CASCADE)
+    pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE)
     alert_type = models.CharField(max_length=10, choices=ALERT_TYPES)
     threshold_value = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     percentage_change = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
@@ -212,3 +212,29 @@ class APICallLog(models.Model):
 
     def __str__(self):
         return f"{self.provider.name.upper()} API call at {self.called_at}"
+
+
+class RawPricingData(models.Model):
+    """Raw pricing payloads from upstream sources (e.g. Infracost).
+
+    Each price node received from an external API is stored here verbatim so
+    we can re-run transforms, audits, or troubleshooting without losing the
+    original payload. Optionally linked to a normalized `NormalizedPricingData` record.
+    """
+    provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='raw_pricing')
+    node_id = models.CharField(max_length=200, blank=True, null=True, help_text="Optional upstream id for dedupe")
+    raw_json = models.JSONField(default=dict, blank=True)
+    source_api = models.CharField(max_length=100, blank=True, default='infracost')
+    fetched_at = models.DateTimeField(auto_now_add=True)
+    # Link to the normalized pricing record when available
+    normalized = models.ForeignKey('NormalizedPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='raw_entries')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider', 'node_id']),
+            models.Index(fields=['fetched_at']),
+        ]
+
+    def __str__(self):
+        nid = self.node_id or '(no id)'
+        return f"Raw pricing {self.provider.name.upper()} {nid} @ {self.fetched_at}"

@@ -1,5 +1,6 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
@@ -15,18 +16,11 @@ app.autodiscover_tasks()
 
 # Celery beat schedule for periodic tasks
 app.conf.beat_schedule = {
-    'update-all-pricing-daily': {
-        'task': 'cloud_pricing.tasks.update_all_pricing_data',
-        'schedule': 24 * 60 * 60,  # Run daily (24 hours)
-    },
-    'cleanup-old-pricing-weekly': {
-        'task': 'cloud_pricing.tasks.cleanup_old_pricing_data',
-        'schedule': 7 * 24 * 60 * 60,  # Run weekly
-        'kwargs': {'days_to_keep': 90}
-    },
-    'check-price-alerts-hourly': {
-        'task': 'cloud_pricing.tasks.check_price_alerts',
-        'schedule': 60 * 60,  # Run hourly
+    # Replace daily update-all-pricing with weekly dump + full import
+    "weekly-infracost-dump": {
+        "task": "cloud_pricing.tasks.weekly_pricing_dump_update",
+        # Run every Sunday at 04:00 AM (adjust timezone / hour to your preference)
+        "schedule": crontab(hour=4, minute=0, day_of_week="sun"),
     },
 }
 

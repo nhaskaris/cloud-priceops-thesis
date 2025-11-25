@@ -7,13 +7,15 @@ from django.conf import settings
 from django.db.models import Q
 from ..models import (
     CloudProvider, CloudService, Region, ServiceCategory,
-    PricingModel, Currency, PricingData, PriceHistory, PriceAlert
+    PricingModel, Currency, NormalizedPricingData, PriceHistory, PriceAlert
 )
+from ..models import RawPricingData
 from .serializers import (
     CloudProviderSerializer, CloudServiceSerializer, RegionSerializer,
     ServiceCategorySerializer, PricingModelSerializer, CurrencySerializer,
     PricingDataSerializer, PriceHistorySerializer, PriceAlertSerializer
 )
+from .serializers import RawPricingDataSerializer
 from .serializers import TCORequestSerializer
 import requests
 import logging
@@ -61,7 +63,7 @@ class CurrencyViewSet(viewsets.ModelViewSet):
 
 
 class PricingDataViewSet(viewsets.ModelViewSet):
-    queryset = PricingData.objects.select_related(
+    queryset = NormalizedPricingData.objects.select_related(
         "provider", "service", "region", "pricing_model", "currency"
     ).all()
     serializer_class = PricingDataSerializer
@@ -172,7 +174,7 @@ class TCOView(APIView):
             # find the best matching pricing record in DB using resource intent heuristics
             # If regions list is empty, search across all regions and pick the cheapest one
             # select records that have some kind of price available (hourly, unit, or monthly)
-            qs = PricingData.objects.filter(
+            qs = NormalizedPricingData.objects.filter(
                 provider__name__iexact=prov,
                 is_active=True
             ).filter(
@@ -317,4 +319,10 @@ class PriceHistoryViewSet(viewsets.ModelViewSet):
 class PriceAlertViewSet(viewsets.ModelViewSet):
     queryset = PriceAlert.objects.select_related("pricing_data", "user").all()
     serializer_class = PriceAlertSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+
+class RawPricingDataViewSet(viewsets.ModelViewSet):
+    queryset = RawPricingData.objects.select_related("provider", "normalized").all()
+    serializer_class = RawPricingDataSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]

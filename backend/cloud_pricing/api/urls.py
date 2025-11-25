@@ -5,6 +5,7 @@ from .views import (
     RegionViewSet, PricingModelViewSet, CurrencyViewSet,
     PricingDataViewSet, PriceHistoryViewSet, PriceAlertViewSet
 )
+from .views import RawPricingDataViewSet
 from .views import TCOView
 
 router = DefaultRouter()
@@ -17,6 +18,7 @@ router.register(r'currencies', CurrencyViewSet)
 router.register(r'pricing', PricingDataViewSet, basename='pricing')
 router.register(r'price-history', PriceHistoryViewSet)
 router.register(r'price-alerts', PriceAlertViewSet)
+router.register(r'raw-pricing', RawPricingDataViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

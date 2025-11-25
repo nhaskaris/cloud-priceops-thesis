@@ -13,7 +13,7 @@ class CloudPricingConfig(AppConfig):
     def ready(self):
         # Avoid circular imports until app registry is ready
         try:
-            from .tasks import update_all_pricing_data
+            from .tasks import weekly_pricing_dump_update
         except Exception:
             logger.exception('Could not import update_all_pricing_data task')
             return
@@ -28,6 +28,6 @@ class CloudPricingConfig(AppConfig):
         if runserver and is_reloader_child:
             try:
                 logger.info('Triggering update_all_pricing_data task from AppConfig.ready()')
-                update_all_pricing_data.delay()
+                weekly_pricing_dump_update.delay()
             except Exception:
                 logger.exception('Failed to enqueue update_all_pricing_data')
