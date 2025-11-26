@@ -44,11 +44,16 @@ services:
   celery:
     build: ./backend/
     container_name: priceops_celery_worker
+    # Limit concurrency and recycle worker children to reduce memory usage/OOM risk.
+    # -c 1                          -> single concurrent worker process
+    # --max-tasks-per-child=50     -> recycle child after 50 tasks (prevents mem growth)
+    # --time-limit / --soft-time-limit -> hard/soft task timeouts (seconds)
+    # --prefetch-multiplier=1      -> avoid prefetching many tasks into a worker
     command: >
-      sh -c "celery -A core worker --loglevel=info -E"
+      sh -c "celery -A core worker --loglevel=info -E -c 1 --max-tasks-per-child=50 --time-limit=3600 --soft-time-limit=3540 --prefetch-multiplier=1"
     env_file:
       - ./backend/.env
-      - ./.env               # Root env for DB credentials
+      - ./.env
     depends_on:
       - backend
       - redis

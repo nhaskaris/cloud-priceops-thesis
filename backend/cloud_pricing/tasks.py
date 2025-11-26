@@ -5,7 +5,7 @@ import tempfile
 import logging
 import requests
 
-from datetime import datetime
+from django.utils import timezone
 from decimal import Decimal
 
 from celery import shared_task
@@ -135,24 +135,82 @@ def weekly_pricing_dump_update():
         if not rows:
             break
 
-        npd_objs = []
-        raw_objs = []
-        for row in rows:
-            rowdict = {col_names[i]: row[i] for i in range(len(col_names))}
+        # We'll build a map of existing latest RawPricingData by node_id for this batch
+        rowdicts = [ {col_names[i]: row[i] for i in range(len(col_names))} for row in rows ]
+        batch_node_ids = [r.get('productHash') for r in rowdicts if r.get('productHash')]
+
+        existing_latest_raw = {}
+        if batch_node_ids:
+            qs = RawPricingData.objects.filter(provider=provider, node_id__in=batch_node_ids).order_by('node_id', '-fetched_at')
+            # pick the first (latest) per node_id
+            for raw in qs:
+                nid = raw.node_id
+                if nid and nid not in existing_latest_raw:
+                    existing_latest_raw[nid] = raw
+
+        processed = 0
+        skipped = 0
+        created = 0
+
+        # Process each row individually so we can compare with previous raw_json and create history
+        for rowdict in rowdicts:
             try:
+                pid = rowdict.get('productHash')
+                prev_raw = existing_latest_raw.get(pid) if pid else None
+
+                # If we have a previous raw and its raw_json equals this row, skip (duplicate)
+                if prev_raw and prev_raw.raw_json == rowdict:
+                    skipped += 1
+                    processed += 1
+                    continue
+
                 npd, raw = _make_pricing_from_row(rowdict, provider, currency)
+
+                # Save new normalized + raw, and link them
+                npd.save()
+                raw.normalized = npd
+                raw.save()
+                created += 1
+
+                # If there was a previous normalized record linked to the prev_raw, mark it inactive and set end_date
+                if prev_raw and prev_raw.normalized:
+                    prev_np = prev_raw.normalized
+                    try:
+                        prev_price = prev_np.price_per_unit
+                        new_price = npd.price_per_unit
+                        change_pct = None
+                        if prev_price is not None and new_price is not None and prev_price != 0:
+                            try:
+                                change_pct = (Decimal(new_price) - Decimal(prev_price)) / Decimal(prev_price) * Decimal('100')
+                            except Exception:
+                                change_pct = None
+                        # create a PriceHistory entry for the new pricing record
+                        try:
+                            PriceHistory = __import__('cloud_pricing.models', fromlist=['PriceHistory']).PriceHistory
+                            PriceHistory.objects.create(
+                                pricing_data=npd,
+                                price_per_hour=npd.price_per_hour,
+                                price_per_month=npd.price_per_month,
+                                price_per_unit=npd.price_per_unit,
+                                change_percentage=change_pct
+                            )
+                        except Exception:
+                            logger.exception('Failed to create PriceHistory for %s', npd)
+
+                        prev_np.is_active = False
+                        prev_np.end_date = timezone.now()
+                        prev_np.save(update_fields=['is_active', 'end_date', 'updated_at'])
+                    except Exception:
+                        logger.exception('Error updating previous normalized record for node %s', pid)
+
+                processed += 1
             except Exception as e:
                 logger.exception("Error processing row %r: %s", rowdict, e)
                 continue
-            npd_objs.append(npd)
-            raw_objs.append(raw)
 
-        NormalizedPricingData.objects.bulk_create(npd_objs, batch_size=BATCH)
-        RawPricingData.objects.bulk_create(raw_objs, batch_size=BATCH)
-        total_saved += len(npd_objs)
-
+        total_saved += created
         offset += BATCH
-        logger.info("Normalized %d rows, offset %d", len(npd_objs), offset)
+        logger.info("Batch processed: processed=%d created=%d skipped=%d, offset=%d", processed, created, skipped, offset)
 
     # 5. Clean up temp file
     try:
@@ -175,7 +233,8 @@ def weekly_pricing_dump_update():
 
 def _make_pricing_from_row(row, provider, currency):
     # Extract service/service code etc
-    service_code = _truncate(row.get("service") or row.get("vendorName"), 50, "service_code")
+    # CloudService.service_code max_length is 100 in models.py — keep truncate consistent
+    service_code = _truncate(row.get("service") or row.get("vendorName"), 100, "service_code")
     service_name = row.get("service") or service_code
     product_family = row.get("productFamily")
     region_code = _truncate(row.get("region") or "", 50, "region_code")
@@ -242,7 +301,7 @@ def _make_pricing_from_row(row, provider, currency):
         tenancy=parsed_attrs.get("tenancy", "") or "",
         price_per_unit=price_val,
         price_unit=first_price.get("unit", "") if first_price else "",
-        effective_date=datetime.utcnow(),
+        effective_date=timezone.now(),
         attributes=parsed_attrs,
         raw_data=row,
         source_api="infracost_dump"

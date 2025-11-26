@@ -47,7 +47,7 @@ class CloudService(models.Model):
     """Cloud services (e.g. EC2, Azure VMs, GCP Compute Engine)"""
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='services')
     service_name = models.CharField(max_length=100)
-    service_code = models.CharField(max_length=50)  # e.g. AmazonEC2, Virtual Machines
+    service_code = models.CharField(max_length=100)  # e.g. AmazonEC2, Virtual Machines
     category = models.ForeignKey(ServiceCategory, on_delete=models.SET_NULL, null=True, blank=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
