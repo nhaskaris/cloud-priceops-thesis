@@ -16,5 +16,9 @@ celery
 redis
 flower
 
+# Feast + DuckDB for feature store (SDK-first)
+feast
+duckdb
+
 # WSGI server
 gunicorn

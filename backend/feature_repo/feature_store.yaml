@@ -1,0 +1,12 @@
+project: priceops
+provider: local
+
+online_store:
+  type: redis
+  connection_string: redis://redis:6379
+
+offline_store:
+  type: duckdb
+  path: ./offline_store.duckdb
+
+registry: ./registry.db

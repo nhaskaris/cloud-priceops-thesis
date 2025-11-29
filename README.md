@@ -15,3 +15,43 @@
 - Change service_code to be 100 char instead of 50 so it doesnt get cut down.
 - Celery worker was crushing when parsing the data so we lowered to 1 child with 50 max tasks and avoiding extra tasks.
 - When we fetch now new data we check if there were any changes and skip duplicate records(if raw was the same as before), if not we add a new row and on old one we set it as inactive and with an end date and add a row on price history.
+
+
+### 27.11
+
+- Added a Feature Store for users to use for ml training
+- Created endpoinds for users to access the feature store.
+- We update our features every time we get new prices. (every week practically)
+- We use redis for the online access and duckdb for offline. Basically online access means its the latest data features for users to get. Offline's purpose is for training and historical prices.
+- Features accessible right now (
+    Latest price per unit.
+    previous_price
+    price_diff_abs
+    price_diff_pct
+    days_since_price_change
+    price_change_frequency_90d
+  )
+- Added reference to raw data from norm instead of saving raw json on norm alongside raw table 
+- Add a ML registry(future)/MLFlow
+
+### 28.11
+
+- Removed on startup run of events.
+- Added on readme the commands to run the tasks manually.
+- Removed soft kill of tasks
+
+### 29.11
+- Replaced auto_add_now for date times with default=timezone.now
+
+
+
+
+### DOC
+```docker exec -it priceops_celery_worker \
+  celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
+```
+
+```
+docker exec -it priceops_celery_worker \
+  celery -A core call cloud_pricing.tasks.materialize_features_to_duckdb
+```

@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from datetime import datetime
-
+from django.utils import timezone
 
 class CloudProvider(models.Model):
     """Cloud provider information (Infracost supports AWS, Azure, GCP)"""
@@ -11,8 +11,8 @@ class CloudProvider(models.Model):
         ('gcp', 'Google Cloud Platform'),
     ]
 
-    name = models.CharField(max_length=10, choices=PROVIDER_CHOICES, unique=True)
-    display_name = models.CharField(max_length=50)
+    name = models.CharField(max_length=50, choices=PROVIDER_CHOICES, unique=True)
+    display_name = models.CharField(max_length=100)
     api_endpoint = models.URLField(
         blank=True,
         null=True,
@@ -23,8 +23,8 @@ class CloudProvider(models.Model):
         default=True,
         help_text="Indicates whether this provider's pricing is sourced from Infracost"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
         return self.display_name
@@ -33,8 +33,8 @@ class CloudProvider(models.Model):
 class ServiceCategory(models.Model):
     """Service categories (Compute, Storage, Network, etc.)"""
     name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         verbose_name_plural = "Service Categories"
@@ -55,8 +55,8 @@ class CloudService(models.Model):
         default=True,
         help_text="True if this service is sourced from Infracost API"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         unique_together = ['provider', 'service_code']
@@ -68,10 +68,10 @@ class CloudService(models.Model):
 class Region(models.Model):
     """Cloud regions"""
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='regions')
-    region_code = models.CharField(max_length=50)  # e.g., us-east-1, eastus
+    region_code = models.CharField(max_length=100)  # e.g., us-east-1, eastus
     region_name = models.CharField(max_length=100)  # e.g., US East (N. Virginia)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         unique_together = ['provider', 'region_code']
@@ -90,8 +90,8 @@ class PricingModel(models.Model):
         ('pay_as_you_go', 'Pay-as-you-go'),
     ]
 
-    name = models.CharField(max_length=20, choices=PRICING_TYPE_CHOICES, unique=True)
-    display_name = models.CharField(max_length=50)
+    name = models.CharField(max_length=50, choices=PRICING_TYPE_CHOICES, unique=True)
+    display_name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
 
     def __str__(self):
@@ -100,11 +100,11 @@ class PricingModel(models.Model):
 
 class Currency(models.Model):
     """Currency information"""
-    code = models.CharField(max_length=3, unique=True)  # USD, EUR, GBP
-    name = models.CharField(max_length=50)
-    symbol = models.CharField(max_length=5)
-    exchange_rate_to_usd = models.DecimalField(max_digits=10, decimal_places=10, null=True, blank=True)
-    last_updated = models.DateTimeField(auto_now=True)
+    code = models.CharField(max_length=10, unique=True)  # USD, EUR, GBP
+    name = models.CharField(max_length=100)
+    symbol = models.CharField(max_length=10)
+    exchange_rate_to_usd = models.DecimalField(max_digits=18, decimal_places=10, null=True, blank=True)
+    last_updated = models.DateTimeField(default=timezone.now)
 
     class Meta:
         verbose_name_plural = "Currencies"
@@ -123,28 +123,29 @@ class NormalizedPricingData(models.Model):
 
     # Product details
     product_family = models.CharField(max_length=100, blank=True)  # Compute, Storage, etc.
-    instance_type = models.CharField(max_length=50, blank=True)
-    operating_system = models.CharField(max_length=50, blank=True)
-    tenancy = models.CharField(max_length=20, blank=True)
+    instance_type = models.CharField(max_length=100, blank=True)
+    operating_system = models.CharField(max_length=100, blank=True)
+    tenancy = models.CharField(max_length=50, blank=True)
 
     # Pricing values
     price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_year = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    price_unit = models.CharField(max_length=50, blank=True)
+    price_unit = models.CharField(max_length=100, blank=True)
 
     # Flexible metadata
     attributes = models.JSONField(default=dict, blank=True)
-    raw_data = models.JSONField(default=dict, blank=True)
+
+    raw_entry = models.ForeignKey('RawPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='canonical_normalized')
 
     # Lifecycle tracking
     effective_date = models.DateTimeField(default=datetime.now)
     end_date = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     source_api = models.CharField(max_length=100, blank=True, default="infracost")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         indexes = [
@@ -168,7 +169,7 @@ class PriceHistory(models.Model):
     price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     change_percentage = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
-    recorded_at = models.DateTimeField(auto_now_add=True)
+    recorded_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ['-recorded_at']
@@ -187,11 +188,11 @@ class PriceAlert(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='price_alerts')
     pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE)
-    alert_type = models.CharField(max_length=10, choices=ALERT_TYPES)
+    alert_type = models.CharField(max_length=50, choices=ALERT_TYPES)
     threshold_value = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
     percentage_change = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
         return f"Alert for {self.user.username} - {self.pricing_data}"
@@ -205,7 +206,7 @@ class APICallLog(models.Model):
     response_time = models.DecimalField(max_digits=8, decimal_places=3)  # in seconds
     records_updated = models.IntegerField(default=0)
     error_message = models.TextField(blank=True)
-    called_at = models.DateTimeField(auto_now_add=True)
+    called_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ['-called_at']
@@ -225,7 +226,7 @@ class RawPricingData(models.Model):
     node_id = models.CharField(max_length=200, blank=True, null=True, help_text="Optional upstream id for dedupe")
     raw_json = models.JSONField(default=dict, blank=True)
     source_api = models.CharField(max_length=100, blank=True, default='infracost')
-    fetched_at = models.DateTimeField(auto_now_add=True)
+    fetched_at = models.DateTimeField(default=timezone.now)
     # Link to the normalized pricing record when available
     normalized = models.ForeignKey('NormalizedPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='raw_entries')
 

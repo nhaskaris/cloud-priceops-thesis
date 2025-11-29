@@ -20,6 +20,12 @@ from .serializers import TCORequestSerializer
 import requests
 import logging
 import re
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from feature_repo.duckdb_client import connect, path_for_store
+from django.core.exceptions import ImproperlyConfigured
 
 logger = logging.getLogger(__name__)
 
@@ -326,3 +332,255 @@ class RawPricingDataViewSet(viewsets.ModelViewSet):
     queryset = RawPricingData.objects.select_related("provider", "normalized").all()
     serializer_class = RawPricingDataSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+
+
+class FeatureLookup(APIView):
+    """Lookup latest feature values for a pricing entity.
+
+    Query params:
+      - pricing_data_id (int)
+      - node_id (str)
+
+    Returns JSON mapping feature -> { value, raw_value, computed_at }
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        pricing_data_id = request.query_params.get('pricing_data_id')
+        node_id = request.query_params.get('node_id')
+
+        if not pricing_data_id and not node_id:
+            return Response({'error': 'Provide pricing_data_id or node_id'}, status=status.HTTP_400_BAD_REQUEST)
+        # Try Feast online store first (if Feast and a feature repo are available)
+        try:
+            from feast import FeatureStore
+            from pathlib import Path
+
+            repo_path = Path(__file__).resolve().parents[2] / 'feature_repo'
+            fs = FeatureStore(repo_path=str(repo_path))
+
+            # Build entity rows
+            entity = {}
+            if pricing_data_id:
+                entity['pricing_data_id'] = int(pricing_data_id)
+            elif node_id:
+                entity['node_id'] = node_id
+
+            # Feature refs expected (must match your feature repo definitions)
+            feature_refs = [
+                'current_price',
+                'price_history_count',
+                'latest_change_pct',
+            ]
+
+            try:
+                of = fs.get_online_features(feature_refs, [entity])
+                # of is a Feast OnlineResponse / dictionary-like; convert to dict safely
+                out = of.to_dict() if hasattr(of, 'to_dict') else dict(of)
+                # Format into feature -> value mapping
+                features = {}
+                # Depending on Feast version, of.to_dict() structure varies; handle common layouts
+                if 'values' in out and 'fields' in out:
+                    # new-format: {'values': [[...]], 'fields': [...]} 
+                    fields = out['fields']
+                    vals = out['values'][0] if out['values'] else []
+                    for i, f in enumerate(fields):
+                        features[f] = {'value': vals[i] if i < len(vals) else None}
+                else:
+                    # fallback: attempt to read as plain dict of lists
+                    for k, v in out.items():
+                        features[k] = {'value': v[0] if isinstance(v, list) and v else v}
+
+                return Response({'features': features})
+            except Exception:
+                # If Feast repo or online lookup fails, fall through to offline methods
+                logger.exception('Feast online lookup failed (falling back to offline)')
+        except Exception:
+            # Feast not available or repo missing — continue to offline lookup
+            logger.debug('Feast not configured or unavailable; using offline store')
+
+        # Try DuckDB offline store
+        try:
+            con = connect(path_for_store())
+            if pricing_data_id:
+                rows = con.execute(
+                    'SELECT feature, value, raw_value, computed_at FROM feature_values WHERE pricing_data_id = ? ORDER BY computed_at DESC',
+                    (int(pricing_data_id),)
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    'SELECT feature, value, raw_value, computed_at FROM feature_values WHERE node_id = ? ORDER BY computed_at DESC',
+                    (node_id,)
+                ).fetchall()
+            con.close()
+            # Keep latest per feature
+            feature_map = {}
+            for feat, val, raw, ts in rows:
+                if feat not in feature_map:
+                    feature_map[feat] = {'value': val, 'raw_value': raw, 'computed_at': str(ts)}
+            return Response({'features': feature_map})
+        except Exception:
+            # Fall back to Django model if present
+            try:
+                from ..models import FeatureValue
+                qs = FeatureValue.objects.filter(pricing_data__id=pricing_data_id) if pricing_data_id else FeatureValue.objects.filter(node_id=node_id)
+                qs = qs.order_by('-computed_at')
+                feature_map = {}
+                for fv in qs:
+                    if fv.feature.name not in feature_map:
+                        feature_map[fv.feature.name] = {
+                            'value': float(fv.value) if fv.value is not None else None,
+                            'raw_value': fv.raw_value,
+                            'computed_at': fv.computed_at.isoformat() if fv.computed_at else None,
+                        }
+                return Response({'features': feature_map})
+            except ImproperlyConfigured:
+                return Response({'error': 'No offline feature store available'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            except Exception:
+                logger.exception('Feature lookup failed')
+                return Response({'error': 'Feature lookup failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class LatestFeatures(APIView):
+    """Return the latest feature values (online-first). Use this for serving/real-time queries.
+
+    Query params:
+        - pricing_data_id (int)
+        - node_id (str)
+
+    Returns a mapping feature -> { value, raw_value, computed_at }
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        pricing_data_id = request.query_params.get('pricing_data_id')
+        node_id = request.query_params.get('node_id')
+
+        if not pricing_data_id and not node_id:
+            return Response({'error': 'Provide pricing_data_id or node_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try Feast online store first
+        try:
+            from feast import FeatureStore
+            from pathlib import Path
+
+            repo_path = Path(__file__).resolve().parents[2] / 'feature_repo'
+            fs = FeatureStore(repo_path=str(repo_path))
+
+            entity = {}
+            if pricing_data_id:
+                entity['pricing_data_id'] = int(pricing_data_id)
+            else:
+                entity['node_id'] = node_id
+
+            # Define the feature refs you expect to serve; adjust if you have a canonical repo
+            feature_refs = [
+                'current_price',
+                'previous_price',
+                'price_diff_abs',
+                'price_diff_pct',
+                'days_since_price_change',
+                'price_change_frequency_90d',
+            ]
+
+            of = fs.get_online_features(feature_refs, [entity])
+            out = of.to_dict() if hasattr(of, 'to_dict') else dict(of)
+
+            # Convert to feature->value mapping (best-effort across Feast versions)
+            features = {}
+            if 'values' in out and 'fields' in out:
+                fields = out['fields']
+                vals = out['values'][0] if out['values'] else []
+                for i, f in enumerate(fields):
+                    features[f] = {'value': vals[i] if i < len(vals) else None}
+            else:
+                for k, v in out.items():
+                    features[k] = {'value': v[0] if isinstance(v, list) and v else v}
+
+            return Response({'features': features})
+        except Exception:
+            logger.exception('Feast online lookup failed or unavailable; falling back to DuckDB')
+
+        # Fallback to DuckDB latest per feature
+        try:
+            con = connect(path_for_store())
+            if pricing_data_id:
+                rows = con.execute(
+                    'SELECT feature, value, raw_value, computed_at FROM feature_values WHERE pricing_data_id = ? ORDER BY computed_at DESC',
+                    (int(pricing_data_id),)
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    'SELECT feature, value, raw_value, computed_at FROM feature_values WHERE node_id = ? ORDER BY computed_at DESC',
+                    (node_id,)
+                ).fetchall()
+            con.close()
+
+            feature_map = {}
+            for feat, val, raw, ts in rows:
+                if feat not in feature_map:
+                    feature_map[feat] = {'value': val, 'raw_value': raw, 'computed_at': str(ts)}
+            return Response({'features': feature_map})
+        except Exception:
+            logger.exception('DuckDB lookup failed for latest features')
+            return Response({'error': 'Latest feature lookup failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class FeatureHistory(APIView):
+    """Return historical feature rows from the offline DuckDB store (for training/backfills).
+
+    Query params:
+        - pricing_data_id (int) OR node_id (str)
+        - feature (optional) to filter a specific feature
+        - start_date, end_date (ISO) optional time range filter on computed_at
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        pricing_data_id = request.query_params.get('pricing_data_id')
+        node_id = request.query_params.get('node_id')
+        feature = request.query_params.get('feature')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        if not pricing_data_id and not node_id:
+            return Response({'error': 'Provide pricing_data_id or node_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            con = connect(path_for_store())
+            params = []
+            where = []
+            if pricing_data_id:
+                where.append('pricing_data_id = ?')
+                params.append(int(pricing_data_id))
+            else:
+                where.append('node_id = ?')
+                params.append(node_id)
+            if feature:
+                where.append('feature = ?')
+                params.append(feature)
+            if start_date:
+                where.append('computed_at >= ?')
+                params.append(start_date)
+            if end_date:
+                where.append('computed_at <= ?')
+                params.append(end_date)
+
+            where_sql = ' AND '.join(where)
+            sql = f"SELECT feature, value, raw_value, computed_at FROM feature_values WHERE {where_sql} ORDER BY computed_at DESC"
+            rows = con.execute(sql, tuple(params)).fetchall()
+            con.close()
+
+            # Return list of rows
+            out = []
+            for feat, val, raw, ts in rows:
+                out.append({
+                    'feature': feat,
+                    'value': val,
+                    'raw_value': raw,
+                    'computed_at': str(ts),
+                })
+            return Response({'history': out})
+        except Exception:
+            logger.exception('DuckDB history lookup failed')
+            return Response({'error': 'Feature history lookup failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
