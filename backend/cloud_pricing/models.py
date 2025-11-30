@@ -224,7 +224,8 @@ class RawPricingData(models.Model):
     """
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='raw_pricing')
     node_id = models.CharField(max_length=200, blank=True, null=True, help_text="Optional upstream id for dedupe")
-    raw_json = models.JSONField(default=dict, blank=True)
+    raw_json = models.TextField()
+    digest = models.CharField(max_length=40, blank=True, db_index=True) 
     source_api = models.CharField(max_length=100, blank=True, default='infracost')
     fetched_at = models.DateTimeField(default=timezone.now)
     # Link to the normalized pricing record when available
@@ -234,6 +235,14 @@ class RawPricingData(models.Model):
         indexes = [
             models.Index(fields=['provider', 'node_id']),
             models.Index(fields=['fetched_at']),
+            models.Index(fields=['provider', 'node_id', 'digest'], name="idx_provider_node_digest"),
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'node_id', 'digest'],
+                name='uq_provider_node_digest',
+            )
         ]
 
     def __str__(self):

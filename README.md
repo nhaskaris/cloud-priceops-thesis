@@ -42,8 +42,7 @@
 
 ### 29.11
 - Replaced auto_add_now for date times with default=timezone.now
-
-
+- Optimized celery task to not  over use ram and cpu but opening a cursor with select all from staging. We then fetch a batch of them(1000) to control how many rows we keep in memory. This makes it a bit slow but allows us to not over use resources and crash the system.
 
 
 ### DOC
