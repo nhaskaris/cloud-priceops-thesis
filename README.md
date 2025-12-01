@@ -46,6 +46,8 @@
 
 ### 1.12
 - Each child celery worker should only handle 1 task so it can restart and empty ram after each task is done.(Was using 8gb of ram)
+- Introduced feast, using redis for online and postgres for offline. We cant push to postgres directly so we use the django orm to do that and then we just push to online. We need offline for training so we can retrieve. Created new app for the feast_offline
+
 
 ### DOC
 ```docker exec -it priceops_celery_worker \
@@ -54,5 +56,9 @@
 
 ```
 docker exec -it priceops_celery_worker \
-  celery -A core call cloud_pricing.tasks.materialize_features_to_duckdb
+  celery -A core call cloud_pricing.tasks.materialize_features
 ```
+
+```
+feast apply
+``` in the direectory of feature_repo
