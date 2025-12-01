@@ -50,7 +50,7 @@ services:
     # --time-limit / --soft-time-limit -> hard/soft task timeouts (seconds)
     # --prefetch-multiplier=1      -> avoid prefetching many tasks into a worker
     command: >
-      sh -c "celery -A core worker --loglevel=info -E -c 1 --max-tasks-per-child=50 --prefetch-multiplier=1"
+      sh -c "celery -A core worker --loglevel=info -E -c 1 --max-tasks-per-child=1 --prefetch-multiplier=1"
     env_file:
       - ./backend/.env
       - ./.env
