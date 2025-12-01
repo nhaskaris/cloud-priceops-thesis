@@ -148,6 +148,7 @@ class NormalizedPricingData(models.Model):
     updated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        db_table = "normalized_pricing_data"
         indexes = [
             models.Index(fields=['provider', 'service', 'region']),
             models.Index(fields=['instance_type']),
@@ -172,6 +173,7 @@ class PriceHistory(models.Model):
     recorded_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
+        db_table = "price_history"
         ordering = ['-recorded_at']
 
     def __str__(self):

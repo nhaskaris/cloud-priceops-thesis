@@ -23,7 +23,7 @@ app.conf.beat_schedule = {
     },
     # Run a task after every pricing data import to update features
     # "post-import-feature-update": {
-    #     "task": "cloud_pricing.tasks.materialize_features_to_duckdb",
+    #     "task": "cloud_pricing.tasks.materialize_features",
     #     "schedule": crontab(minute="*/15"),
     # },
 }

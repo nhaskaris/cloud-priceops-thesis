@@ -1,12 +1,16 @@
-project: priceops
+project: pricing
+registry: data/registry.db
 provider: local
+entity_key_serialization_version: 2
+
+offline_store:
+  type: postgres
+  host: ${POSTGRES_HOST}
+  port: ${POSTGRES_PORT}
+  database: ${POSTGRES_DB}
+  user: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
 
 online_store:
   type: redis
-  connection_string: redis://redis:6379
-
-offline_store:
-  type: duckdb
-  path: ./offline_store.duckdb
-
-registry: ./registry.db
+  connection_string: "priceops_redis_cache:6379"

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'cloud_pricing.apps.CloudPricingConfig',
+    'feast_offline.apps.FeastOfflineConfig',
 ]
 
 MIDDLEWARE = [

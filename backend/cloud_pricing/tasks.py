@@ -7,13 +7,13 @@ import requests
 
 from django.utils import timezone
 from decimal import Decimal
-from datetime import timedelta
-import gc
+from datetime import datetime, timedelta, timezone
 
 from celery import shared_task
 from django.db import connection, transaction
 from django.db.utils import IntegrityError
 from django.conf import settings
+from django.db.models import OuterRef, Subquery, Count
 
 from .models import (
     CloudProvider,
@@ -26,74 +26,18 @@ from .models import (
     Currency,
     APICallLog,
 )
-from hashlib import sha1
+
+from feast import FeatureStore
+from feast.data_source import PushMode
+import pandas as pd
+from celery import shared_task
+from django.db import connection
+from django.utils import timezone as dj_timezone
 
 logger = logging.getLogger(__name__)
 
-
-def _get_rss_kb():
-    """Return current process RSS in KB. Works in Linux containers by reading /proc/self/status."""
-    try:
-        with open('/proc/self/status', 'r') as f:
-            for line in f:
-                if line.startswith('VmRSS:'):
-                    parts = line.split()
-                    # parts e.g. ['VmRSS:', '123456', 'kB']
-                    return int(parts[1])
-    except Exception:
-        pass
-    return None
-
 DATA_DOWNLOAD_URL = "https://pricing.api.infracost.io/data-download/latest"
 INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
-
-
-def _truncate(value, max_length, field_name=None):
-    if value is None:
-        return None
-    s = str(value)
-    if len(s) > max_length:
-        if field_name:
-            logger.warning("Truncating %s to %d chars (was %d)", field_name, max_length, len(s))
-        return s[:max_length]
-    return s
-
-
-def _row_hash_for_compare(rowdict):
-    """
-    Create a compact hash of the raw row for duplicate detection.
-    Use a stable string representation of key fields.
-    """
-    # We choose the fields which determine whether a row is 'the same' as previous ingestion:
-    # node id, region, service, attributes JSON (sorted), prices JSON (sorted)
-    node = rowdict.get("productHash")
-    region = rowdict.get("region") or ""
-    service = rowdict.get("service") or ""
-    attrs = rowdict.get("attributes") or ""
-    prices = rowdict.get("prices") or ""
-
-    # ensure deterministic encoding of JSON-like strings
-    try:
-        if isinstance(attrs, str):
-            parsed = json.loads(attrs)
-            attrs_ser = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
-        else:
-            attrs_ser = json.dumps(attrs, sort_keys=True, separators=(",", ":"))
-    except Exception:
-        attrs_ser = str(attrs)
-
-    try:
-        if isinstance(prices, str):
-            parsed = json.loads(prices)
-            prices_ser = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
-        else:
-            prices_ser = json.dumps(prices, sort_keys=True, separators=(",", ":"))
-    except Exception:
-        prices_ser = str(prices)
-
-    s = "|".join([str(node), region, service, attrs_ser, prices_ser])
-    return sha1(s.encode("utf-8")).hexdigest()
-
 
 @shared_task
 def weekly_pricing_dump_update():
@@ -407,164 +351,151 @@ def weekly_pricing_dump_update():
     logger.info("Import finished, saved %d normalized rows", total_saved)
     return f"OK: saved {total_saved}"
 
-@shared_task(bind=True)
-def materialize_features_to_duckdb(self, batch_size=2000, duckdb_path=None):
-    """Compute basic features and materialize them into the DuckDB offline store.
-
-    This task reads `NormalizedPricingData` and `PriceHistory` to generate
-    feature rows and inserts them into the offline DuckDB store managed by
-    `feature_repo.duckdb_client`.
+@shared_task
+def materialize_features(batch_size: int = 5000):
     """
-    try:
-        from feature_repo.duckdb_client import path_for_store, ensure_feature_values_table, insert_feature_values
-    except Exception as e:
-        logger.exception('DuckDB helper import failed: %s', e)
-        raise
+    Materialize features into Feast offline (Postgres) + online (Redis) store.
+    """
+    fs = FeatureStore(repo_path="feature_repo")
+    total_pushed = 0
+    last_id = 0
 
-    try:
-        from .models import NormalizedPricingData, PriceHistory
-    except Exception as e:
-        logger.exception('Model import failed in materialize task: %s', e)
-        raise
-
-    store_path = duckdb_path or path_for_store()
-    ensure_feature_values_table(store_path)
-
-    offset = 0
-    total_inserted = 0
     while True:
-        qs = list(NormalizedPricingData.objects.select_related('provider', 'service', 'region')[offset:offset+batch_size])
-        if not qs:
+        # -----------------------------
+        # 1. Fetch batch from normalized_pricing_data with previous price
+        # -----------------------------
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    id,
+                    provider_id,
+                    service_id,
+                    region_id,
+                    instance_type,
+                    operating_system,
+                    tenancy,
+                    pricing_model_id,
+                    price_per_unit,
+                    effective_date,
+                    LAG(price_per_unit) OVER (
+                        PARTITION BY provider_id, service_id, region_id, instance_type,
+                                    operating_system, tenancy, pricing_model_id
+                        ORDER BY effective_date
+                    ) AS previous_price
+                FROM normalized_pricing_data
+                WHERE id > %s
+                ORDER BY id
+                LIMIT %s;
+            """, [last_id, batch_size])
+            rows = cursor.fetchall()
+
+        if not rows:
             break
 
-        rows = []
-        for rec in qs:
-            try:
-                # Compute requested features
-                now = timezone.now()
+        (
+            IDX_ID,
+            IDX_PROVIDER_ID,
+            IDX_SERVICE_ID,
+            IDX_REGION_ID,
+            IDX_INSTANCE_TYPE,
+            IDX_OS,
+            IDX_TENANCY,
+            IDX_MODEL_ID,
+            IDX_PRICE,
+            IDX_EFFECTIVE,
+            IDX_PREV_PRICE,
+        ) = range(11)
+        batch_ids = [r[IDX_ID] for r in rows]
 
-                # current price (primary feature)
-                current_price = float(rec.price_per_unit) if rec.price_per_unit is not None else None
+        # -----------------------------
+        # 2. Get 90-day price change frequency
+        # -----------------------------
+        since = dj_timezone.now() - timedelta(days=90)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT pricing_data_id, COUNT(*) AS cnt
+                FROM price_history
+                WHERE recorded_at >= %s
+                  AND pricing_data_id = ANY(%s)
+                GROUP BY pricing_data_id;
+            """, [since, batch_ids])
+            freq_map = {pid: cnt for pid, cnt in cursor.fetchall()}
 
-                # previous price: try to find the most recent previous NormalizedPricingData
-                prev_qs = NormalizedPricingData.objects.filter(
-                    provider=rec.provider,
-                    service=rec.service,
-                    region=rec.region,
-                    instance_type=rec.instance_type,
-                    operating_system=rec.operating_system,
-                    tenancy=rec.tenancy,
-                    pricing_model=rec.pricing_model,
-                ).exclude(id=rec.id).order_by('-effective_date')
-                prev_np = prev_qs.first()
-                previous_price = float(prev_np.price_per_unit) if (prev_np and prev_np.price_per_unit is not None) else None
+        # -----------------------------
+        # 3. Build feature rows
+        # -----------------------------
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        feature_rows = []
 
-                # absolute and percent diffs
-                price_diff_abs = None
-                price_diff_pct = None
+        for r in rows:
+            rec_id = r[IDX_ID]
+            current_price = r[IDX_PRICE]
+            previous_price = r[IDX_PREV_PRICE]
+            effective_date = r[IDX_EFFECTIVE]
+
+            # price diffs
+            price_diff_abs = price_diff_pct = None
+            if current_price is not None and previous_price is not None:
                 try:
-                    if current_price is not None and previous_price is not None:
-                        price_diff_abs = float(Decimal(str(current_price)) - Decimal(str(previous_price)))
-                        if previous_price != 0:
-                            price_diff_pct = float((Decimal(str(current_price)) - Decimal(str(previous_price))) / Decimal(str(previous_price)))
+                    price_diff_abs = float(Decimal(current_price) - Decimal(previous_price))
+                    if previous_price != 0:
+                        price_diff_pct = float((Decimal(current_price) - Decimal(previous_price)) / Decimal(previous_price))
                 except Exception:
-                    logger.exception('Error computing price diffs for id=%s', getattr(rec, 'id', None))
+                    pass
 
-                # days since this price became effective (how long stable)
-                days_since_price_change = None
-                try:
-                    if rec.effective_date:
-                        days_since_price_change = (now - rec.effective_date).days
-                except Exception:
-                    logger.exception('Error computing days_since_price_change for id=%s', getattr(rec, 'id', None))
+            # days since last change
+            days_since_change = (now - effective_date).days if effective_date else None
 
-                # frequency of price changes in the last 90 days for this product
-                freq_90d = 0
-                try:
-                    since = now - timedelta(days=90)
-                    freq_90d = PriceHistory.objects.filter(
-                        pricing_data__provider=rec.provider,
-                        pricing_data__service=rec.service,
-                        pricing_data__region=rec.region,
-                        pricing_data__instance_type=rec.instance_type,
-                        recorded_at__gte=since
-                    ).count()
-                except Exception:
-                    logger.exception('Error computing freq_90d for id=%s', getattr(rec, 'id', None))
+            feature_rows.append({
+                "pricing_data_id": rec_id,
+                "event_timestamp": effective_date or now,
+                "current_price": float(current_price) if current_price is not None else None,
+                "previous_price": float(previous_price) if previous_price is not None else None,
+                "price_diff_abs": price_diff_abs,
+                "price_diff_pct": price_diff_pct,
+                "days_since_price_change": float(days_since_change) if days_since_change is not None else None,
+                "price_change_frequency_90d": float(freq_map.get(rec_id, 0)),
+                "created": now
+            })
 
-                rows.append({
-                    'feature': 'current_price',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': current_price,
-                    'raw_value': {'unit': rec.price_unit or ''},
-                    'computed_at': now,
-                })
+        df = pd.DataFrame(feature_rows)
 
-                rows.append({
-                    'feature': 'previous_price',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': previous_price,
-                    'raw_value': {'prev_id': prev_np.id if prev_np else None},
-                    'computed_at': now,
-                })
+        # -----------------------------
+        # 4. Insert into offline store table (Postgres)
+        # -----------------------------
+        if not df.empty:
+            with connection.cursor() as cursor:
+                cols = list(df.columns)
+                values_str = ",".join(
+                    cursor.mogrify(
+                        f"({','.join(['%s']*len(cols))})", tuple(row)
+                    )
+                    for row in df.to_numpy()
+                )
+                insert_sql = f"""
+                    INSERT INTO pricing_features ({','.join(cols)})
+                    VALUES {values_str}
+                    ON CONFLICT (pricing_data_id, event_timestamp) DO UPDATE SET
+                        current_price = EXCLUDED.current_price,
+                        previous_price = EXCLUDED.previous_price,
+                        price_diff_abs = EXCLUDED.price_diff_abs,
+                        price_diff_pct = EXCLUDED.price_diff_pct,
+                        days_since_price_change = EXCLUDED.days_since_price_change,
+                        price_change_frequency_90d = EXCLUDED.price_change_frequency_90d,
+                        created = EXCLUDED.created;
+                """
+                cursor.execute(insert_sql)
 
-                rows.append({
-                    'feature': 'price_diff_abs',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': price_diff_abs,
-                    'raw_value': {'abs': price_diff_abs},
-                    'computed_at': now,
-                })
+        # -----------------------------
+        # 5. Push to online store (Redis)
+        # -----------------------------
+        fs.push(
+            push_source_name="pricing_data_push_source",
+            df=df,
+            to=PushMode.ONLINE
+        )
 
-                rows.append({
-                    'feature': 'price_diff_pct',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': price_diff_pct,
-                    'raw_value': {'pct': price_diff_pct},
-                    'computed_at': now,
-                })
+        total_pushed += len(df)
+        last_id = batch_ids[-1]
 
-                rows.append({
-                    'feature': 'days_since_price_change',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': float(days_since_price_change) if days_since_price_change is not None else None,
-                    'raw_value': {'days': days_since_price_change},
-                    'computed_at': now,
-                })
-
-                rows.append({
-                    'feature': 'price_change_frequency_90d',
-                    'pricing_data_id': rec.id,
-                    'node_id': None,
-                    'value': float(freq_90d),
-                    'raw_value': {'count_90d': freq_90d},
-                    'computed_at': now,
-                })
-            except Exception:
-                logger.exception('Failed computing features for record id=%s', getattr(rec, 'id', None))
-                continue
-
-        inserted = insert_feature_values(rows, store_path)
-        # Also push current batch to online store (Feast/Redis)
-        try:
-            from feature_repo.feast_utils import push_to_online, register_features
-            # ensure feast feature defs exist (best-effort)
-            try:
-                register_features()
-            except Exception:
-                logger.debug('register_features call failed or skipped')
-            pushed = push_to_online(rows)
-            logger.info('Pushed %d feature rows to online store', pushed)
-        except Exception:
-            logger.exception('Failed to push batch to online store')
-        total_inserted += inserted
-        offset += batch_size
-        logger.info('Materialize batch inserted=%d offset=%d', inserted, offset)
-
-    logger.info('Materialize finished, total_inserted=%d into %s', total_inserted, store_path)
-    return {'inserted': total_inserted, 'path': store_path}
+    return {"pushed": total_pushed}

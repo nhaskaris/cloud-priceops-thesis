@@ -6,7 +6,7 @@ python-dotenv
 whitenoise
 
 # Database
-psycopg2-binary
+psycopg[binary,pool]
 
 # Networking / API
 requests
@@ -17,8 +17,11 @@ redis
 flower
 
 # Feast + DuckDB for feature store (SDK-first)
-feast
-duckdb
+feast[postgres, redis]
+duckdb>=0.6.1
+
+# Utilities
+tenacity==8.2.2
 
 # WSGI server
 gunicorn

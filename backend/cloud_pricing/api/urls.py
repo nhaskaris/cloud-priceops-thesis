@@ -7,7 +7,6 @@ from .views import (
 )
 from .views import RawPricingDataViewSet
 from .views import TCOView
-from .views import FeatureLookup, LatestFeatures, FeatureHistory
 
 router = DefaultRouter()
 router.register(r'providers', CloudProviderViewSet)
@@ -23,8 +22,5 @@ router.register(r'raw-pricing', RawPricingDataViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('api/v1/features/lookup/', FeatureLookup.as_view(), name='feature-lookup'),
-    path('api/v1/features/latest/', LatestFeatures.as_view(), name='features-latest'),
-    path('api/v1/features/history/', FeatureHistory.as_view(), name='features-history'),
     path('api/v1/tco/', TCOView.as_view(), name='tco'),
 ]

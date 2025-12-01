@@ -1,0 +1,27 @@
+
+J
+*
+pricing_data"pricing_data_idJpricing
+·ì·É˜‰„ÕÅò·ÉĞ»—¥
+>
+
+__dummy"
+__dummy_idJpricing
+·ì·ÉØÁ†ÕÅò·É°“š¥1"$360d7b10-b7bd-4240-8f83-eebed947f8dc*Åò·É¸ÂÁ¥2¥
+„
+pricing_data_featurespricingpricing_data"
+current_price"
+previous_price"
+price_diff_abs"
+price_diff_pct"
+days_since_price_change"
+price_change_frequency_90d2€ç„:óevent_timestamp*created‚]
+[{"name": "pricing_features_source", "query": "SELECT * FROM pricing_features", "table": ""}ŠZfeast.infra.offline_stores.contrib.postgres_offline_store.postgres_source.PostgreSQLSource¢pricing_features_source@J³	Šfeast.data_source.PushSource¢pricing_data_push_sourceÒóevent_timestamp*created‚]
+[{"name": "pricing_features_source", "query": "SELECT * FROM pricing_features", "table": ""}ŠZfeast.infra.offline_stores.contrib.postgres_offline_store.postgres_source.PostgreSQLSource¢pricing_features_sourceb
+pricing_data_id
+·ì·É÷üÔ·ì·É÷üÔb½	Šfeast.data_source.PushSource¢pricing_data_push_sourceªpricingÒóevent_timestamp*created‚]
+[{"name": "pricing_features_source", "query": "SELECT * FROM pricing_features", "table": ""}ŠZfeast.infra.offline_stores.contrib.postgres_offline_store.postgres_source.PostgreSQLSource¢pricing_features_sourcebıevent_timestamp*created‚]
+[{"name": "pricing_features_source", "query": "SELECT * FROM pricing_features", "table": ""}ŠZfeast.infra.offline_stores.contrib.postgres_offline_store.postgres_source.PostgreSQLSource¢pricing_features_sourceªpricingŠ)
+	
+pricing
+·ì·Éğï÷ÓÅò·É˜Î£
