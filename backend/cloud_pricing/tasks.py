@@ -349,6 +349,16 @@ def weekly_pricing_dump_update():
         logger.exception("Failed to write APICallLog")
 
     logger.info("Import finished, saved %d normalized rows", total_saved)
+    
+    # 8. Clean up staging table using SQL (fast)
+    try:
+        with connection.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
+            connection.commit()
+        logger.info("Staging table %s dropped successfully", staging_table)
+    except Exception as e:
+        logger.warning("Could not drop staging table %s: %s", staging_table, e)
+    
     return f"OK: saved {total_saved}"
 
 @shared_task
