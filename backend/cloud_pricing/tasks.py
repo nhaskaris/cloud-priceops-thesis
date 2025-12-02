@@ -25,6 +25,7 @@ from .models import (
     PricingModel,
     Currency,
     APICallLog,
+    PriceHistory,
 )
 
 from feast import FeatureStore
@@ -229,6 +230,7 @@ def weekly_pricing_dump_update():
     # 5. Process staging in batches with proper memory management
     BULK_CHUNK = 100
     total_saved = 0
+    product_hashes_in_dump = set()  # Track which products are in the new dump
 
     with connection.cursor() as cur:
         # Fixed indentation
@@ -245,6 +247,7 @@ def weekly_pricing_dump_update():
             for row in rows:
                 rowdict = dict(zip([desc[0] for desc in cur.description], row))
                 pid = rowdict.get("productHash")
+                product_hashes_in_dump.add(pid)  # Track this product
 
                 # Check for duplicates
                 prev_raw = RawPricingData.objects.filter(provider=provider, node_id=pid).order_by('-fetched_at').first()
@@ -328,6 +331,44 @@ def weekly_pricing_dump_update():
                 with transaction.atomic():
                     NormalizedPricingData.objects.bulk_create(npd_objs_to_create)
                 npd_objs_to_create.clear()
+    
+    # 5b. Archive old/deleted prices to PriceHistory and mark as inactive
+    logger.info("Archiving deleted/not updated prices...")
+    
+    # Find all RawPricingData NOT in the new dump
+    old_raw_not_in_dump = RawPricingData.objects.filter(
+        provider=provider,
+        source_api="infracost_dump"
+    ).exclude(node_id__in=product_hashes_in_dump)
+    
+    # Get NPD records linked to deleted raw data
+    npd_to_archive = NormalizedPricingData.objects.filter(
+        provider=provider,
+        is_active=True,
+        raw_entry__in=old_raw_not_in_dump
+    )
+    
+    # Archive each to price history
+    price_history_records = []
+    for npd in npd_to_archive:
+        price_history_records.append(
+            PriceHistory(
+                pricing_data=npd,
+                previous_price=npd.price_per_unit,
+                current_price=None,  # Null indicates deletion
+                change_type='price_removed',
+                recorded_at=timezone.now()
+            )
+        )
+    
+    # Bulk insert price history for deleted items
+    if price_history_records:
+        PriceHistory.objects.bulk_create(price_history_records)
+        logger.info(f"Archived {len(price_history_records)} deleted prices to history")
+        
+        # Mark these NPD records as inactive
+        npd_to_archive.update(is_active=False)
+        logger.info(f"Marked {len(price_history_records)} records as inactive")
 
     # 6. Clean up
     try:
