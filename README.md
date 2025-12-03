@@ -52,6 +52,10 @@
 - Delete infracost staging table afterwards
 - Price history was missing when inserting new data
 
+### 3.12
+- Re-worked models
+- Re-working weekly dump
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update

@@ -7,13 +7,13 @@ from django.conf import settings
 from django.db.models import Q
 from ..models import (
     CloudProvider, CloudService, Region, ServiceCategory,
-    PricingModel, Currency, NormalizedPricingData, PriceHistory, PriceAlert
+    PricingModel, Currency, NormalizedPricingData, PriceHistory
 )
 from ..models import RawPricingData
 from .serializers import (
     CloudProviderSerializer, CloudServiceSerializer, RegionSerializer,
     ServiceCategorySerializer, PricingModelSerializer, CurrencySerializer,
-    PricingDataSerializer, PriceHistorySerializer, PriceAlertSerializer
+    PricingDataSerializer, PriceHistorySerializer
 )
 from .serializers import RawPricingDataSerializer
 from .serializers import TCORequestSerializer
@@ -320,11 +320,6 @@ class PriceHistoryViewSet(viewsets.ModelViewSet):
     serializer_class = PriceHistorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
 
-
-class PriceAlertViewSet(viewsets.ModelViewSet):
-    queryset = PriceAlert.objects.select_related("pricing_data", "user").all()
-    serializer_class = PriceAlertSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
 
 
 class RawPricingDataViewSet(viewsets.ModelViewSet):

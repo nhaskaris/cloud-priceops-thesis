@@ -128,14 +128,8 @@ class NormalizedPricingData(models.Model):
     tenancy = models.CharField(max_length=50, blank=True)
 
     # Pricing values
-    price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    price_per_year = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_unit = models.CharField(max_length=100, blank=True)
-
-    # Flexible metadata
-    attributes = models.JSONField(default=dict, blank=True)
 
     raw_entry = models.ForeignKey('RawPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='canonical_normalized')
 
@@ -178,26 +172,6 @@ class PriceHistory(models.Model):
 
     def __str__(self):
         return f"History for {self.pricing_data} at {self.recorded_at}"
-
-
-class PriceAlert(models.Model):
-    """User price alerts"""
-    ALERT_TYPES = [
-        ('increase', 'Price Increase'),
-        ('decrease', 'Price Decrease'),
-        ('threshold', 'Price Threshold'),
-    ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='price_alerts')
-    pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE)
-    alert_type = models.CharField(max_length=50, choices=ALERT_TYPES)
-    threshold_value = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
-    percentage_change = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    def __str__(self):
-        return f"Alert for {self.user.username} - {self.pricing_data}"
 
 
 class APICallLog(models.Model):
