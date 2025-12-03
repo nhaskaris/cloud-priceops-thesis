@@ -18,4 +18,5 @@ from django.urls import path, include
 
 urlpatterns = [
     path('', include('cloud_pricing.api.urls')),
+    path('', include('feast_offline.api.urls')),
 ]
