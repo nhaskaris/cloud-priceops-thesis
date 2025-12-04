@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from ..models import (
-    CloudProvider, CloudService, Region, ServiceCategory,
+    CloudProvider, CloudService, Region,
     PricingModel, Currency, NormalizedPricingData, PriceHistory
 )
 from ..models import RawPricingData
@@ -11,11 +11,6 @@ class CloudProviderSerializer(serializers.ModelSerializer):
         model = CloudProvider
         fields = "__all__"
 
-
-class ServiceCategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ServiceCategory
-        fields = "__all__"
 
 
 class CloudServiceSerializer(serializers.ModelSerializer):

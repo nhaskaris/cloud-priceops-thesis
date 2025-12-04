@@ -1,7 +1,6 @@
 from django.core.management.base import BaseCommand
 from cloud_pricing.models import (
     CloudProvider, 
-    ServiceCategory, 
     PricingModel, 
     Currency,
     Region
@@ -37,25 +36,6 @@ class Command(BaseCommand):
                 self.stdout.write(f'Created provider: {provider.display_name}')
             else:
                 self.stdout.write(f'Provider already exists: {provider.display_name}')
-
-        # Create service categories
-        categories = [
-            {'name': 'Compute', 'description': 'Virtual machines and compute services'},
-            {'name': 'Storage', 'description': 'Object storage, block storage, and file storage'},
-            {'name': 'Database', 'description': 'Managed database services'},
-            {'name': 'Network', 'description': 'Networking and content delivery services'},
-            {'name': 'Analytics', 'description': 'Data analytics and machine learning services'},
-            {'name': 'Security', 'description': 'Security and identity services'},
-            {'name': 'Developer Tools', 'description': 'Development and deployment tools'},
-        ]
-
-        for category_data in categories:
-            category, created = ServiceCategory.objects.get_or_create(
-                name=category_data['name'],
-                defaults=category_data
-            )
-            if created:
-                self.stdout.write(f'Created category: {category.name}')
 
         # Create pricing models
         pricing_models = [

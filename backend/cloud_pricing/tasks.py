@@ -19,7 +19,6 @@ from .models import (
     CloudProvider,
     NormalizedPricingData,
     RawPricingData,
-    ServiceCategory,
     CloudService,
     Region,
     PricingModel,
@@ -242,6 +241,31 @@ def weekly_pricing_dump_update():
     total_saved = 0
 
     # TODO: upsert cloud service
+    # From infracost_staging_prices table get service, vendorname to map to provider
+    
+    with connection.cursor() as cur:
+        cur.execute(f"""
+            INSERT INTO cloud_pricing_cloudservice
+            (provider_id, name, is_active, created_at, updated_at)
+            SELECT
+                cp.id,
+                s.service AS name,
+                TRUE,
+                NOW(),
+                NOW()
+            FROM (
+                SELECT DISTINCT service, vendorName FROM {staging_table}
+                WHERE service IS NOT NULL AND service != ''
+            ) s
+            JOIN cloud_pricing_cloudprovider cp
+              ON cp.name = LOWER(s.vendorName)
+        """)
+        inserted = cur.rowcount
+        connection.commit()
+        logger.info("Inserted %d cloud service records", inserted)
+    
+    return
+
     # TODO: upsert pricing model
     # TODO: upsert region
     # TODO: upsert service category
@@ -254,12 +278,12 @@ def weekly_pricing_dump_update():
             LEFT JOIN cloud_pricing_cloudservice cs
               ON cs.provider_id = cp.id AND cs.service_code = sp.service
         )
-        INSERT INTO cloud_pricing_normalized_pricing_data
+        INSERT INTO normalized_pricing_data
         (provider_id, service_id, region_id, pricing_model_id, currency_id,
          price_per_unit, effective_date, raw_entry_id, created_at, updated_at)
         SELECT
             s.provider_id,
-            s.service_id,
+            '',
             s.region_id,
             s.pricing_model_id,
             s.currency_id,

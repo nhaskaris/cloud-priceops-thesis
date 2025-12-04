@@ -30,39 +30,17 @@ class CloudProvider(models.Model):
         return self.display_name
 
 
-class ServiceCategory(models.Model):
-    """Service categories (Compute, Storage, Network, etc.)"""
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        verbose_name_plural = "Service Categories"
-
-    def __str__(self):
-        return self.name
-
 
 class CloudService(models.Model):
     """Cloud services (e.g. EC2, Azure VMs, GCP Compute Engine)"""
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='services')
-    service_name = models.CharField(max_length=100)
-    service_code = models.CharField(max_length=100)  # e.g. AmazonEC2, Virtual Machines
-    category = models.ForeignKey(ServiceCategory, on_delete=models.SET_NULL, null=True, blank=True)
-    description = models.TextField(blank=True)
+    name = models.CharField(max_length=100)
     is_active = models.BooleanField(default=True)
-    infracost_service = models.BooleanField(
-        default=True,
-        help_text="True if this service is sourced from Infracost API"
-    )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 
-    class Meta:
-        unique_together = ['provider', 'service_code']
-
     def __str__(self):
-        return f"{self.provider.name.upper()} - {self.service_name}"
+        return f"{self.provider.name.upper()} - {self.name}"
 
 
 class Region(models.Model):
@@ -151,7 +129,7 @@ class NormalizedPricingData(models.Model):
         ]
 
     def __str__(self):
-        name = f"{self.provider.name.upper()} - {self.service.service_name}"
+        name = f"{self.provider.name.upper()} - {self.service.name}"
         if self.instance_type:
             return f"{name} - {self.instance_type}"
         return name

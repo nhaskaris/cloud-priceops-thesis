@@ -6,13 +6,13 @@ from rest_framework.views import APIView
 from django.conf import settings
 from django.db.models import Q
 from ..models import (
-    CloudProvider, CloudService, Region, ServiceCategory,
+    CloudProvider, CloudService, Region,
     PricingModel, Currency, NormalizedPricingData, PriceHistory
 )
 from ..models import RawPricingData
 from .serializers import (
-    CloudProviderSerializer, CloudServiceSerializer, RegionSerializer,
-    ServiceCategorySerializer, PricingModelSerializer, CurrencySerializer,
+    CloudProviderSerializer, CloudServiceSerializer, RegionSerializer, 
+    PricingModelSerializer, CurrencySerializer,
     PricingDataSerializer, PriceHistorySerializer
 )
 from .serializers import RawPricingDataSerializer
@@ -34,12 +34,6 @@ logger = logging.getLogger(__name__)
 class CloudProviderViewSet(viewsets.ModelViewSet):
     queryset = CloudProvider.objects.all()
     serializer_class = CloudProviderSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
-
-class ServiceCategoryViewSet(viewsets.ModelViewSet):
-    queryset = ServiceCategory.objects.all()
-    serializer_class = ServiceCategorySerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
 
 

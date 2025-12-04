@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    CloudProviderViewSet, ServiceCategoryViewSet, CloudServiceViewSet,
+    CloudProviderViewSet, CloudServiceViewSet,
     RegionViewSet, PricingModelViewSet, CurrencyViewSet,
     PricingDataViewSet, PriceHistoryViewSet
 )
@@ -10,7 +10,6 @@ from .views import TCOView
 
 router = DefaultRouter()
 router.register(r'providers', CloudProviderViewSet)
-router.register(r'categories', ServiceCategoryViewSet)
 router.register(r'services', CloudServiceViewSet)
 router.register(r'regions', RegionViewSet)
 router.register(r'pricing-models', PricingModelViewSet)
