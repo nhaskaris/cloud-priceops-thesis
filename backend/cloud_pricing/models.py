@@ -39,6 +39,9 @@ class CloudService(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        unique_together = ['provider', 'name']
+
     def __str__(self):
         return f"{self.provider.name.upper()} - {self.name}"
 
@@ -46,34 +49,22 @@ class CloudService(models.Model):
 class Region(models.Model):
     """Cloud regions"""
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='regions')
-    region_code = models.CharField(max_length=100)  # e.g., us-east-1, eastus
-    region_name = models.CharField(max_length=100)  # e.g., US East (N. Virginia)
+    name = models.CharField(max_length=100)  # e.g., us-east-1, eastus
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        unique_together = ['provider', 'region_code']
+        unique_together = ['provider', 'name']
 
     def __str__(self):
-        return f"{self.provider.name.upper()} - {self.region_name}"
+        return f"{self.provider.name.upper()} - {self.name}"
 
 
 class PricingModel(models.Model):
-    """Pricing model (On-Demand, Reserved, Spot, etc.)"""
-    PRICING_TYPE_CHOICES = [
-        ('on_demand', 'On-Demand'),
-        ('reserved', 'Reserved'),
-        ('spot', 'Spot'),
-        ('committed_use', 'Committed Use'),
-        ('pay_as_you_go', 'Pay-as-you-go'),
-    ]
-
-    name = models.CharField(max_length=50, choices=PRICING_TYPE_CHOICES, unique=True)
-    display_name = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
+    name = models.CharField(max_length=100, unique=True)
 
     def __str__(self):
-        return self.display_name
+        return self.name
 
 
 class Currency(models.Model):

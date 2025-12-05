@@ -259,16 +259,62 @@ def weekly_pricing_dump_update():
             ) s
             JOIN cloud_pricing_cloudprovider cp
               ON cp.name = LOWER(s.vendorName)
+            ON CONFLICT (provider_id, name) DO NOTHING;
         """)
         inserted = cur.rowcount
         connection.commit()
         logger.info("Inserted %d cloud service records", inserted)
-    
-    return
+
+    with connection.cursor() as cur:
+        cur.execute(f"""
+            INSERT INTO cloud_pricing_region
+            (provider_id, name, is_active, created_at)
+            SELECT
+                cp.id,
+                s.region AS name,
+                TRUE,
+                NOW()
+            FROM (
+                SELECT DISTINCT region, vendorName FROM {staging_table}
+                WHERE region IS NOT NULL AND region != ''
+            ) s
+            JOIN cloud_pricing_cloudprovider cp
+              ON cp.name = LOWER(s.vendorName)
+            ON CONFLICT (provider_id, name) DO NOTHING;
+        """)
+        inserted = cur.rowcount
+        connection.commit()
+        logger.info("Inserted %d region records", inserted)
+
 
     # TODO: upsert pricing model
-    # TODO: upsert region
-    # TODO: upsert service category
+    #IN order to get the pricing model, we need to parse prices column as JSON and get the purchaseOption field if it exists.
+    
+    with connection.cursor() as cur:
+        sql = f"""
+            INSERT INTO cloud_pricing_pricingmodel (name)
+            SELECT DISTINCT
+            COALESCE((prices_json->>'purchaseOption'), 'on_demand') AS pricing_model_name
+            FROM (
+            SELECT
+                CASE
+                WHEN prices IS NOT NULL AND prices <> ''
+                THEN prices::json
+                ELSE '{{}}'::json
+                END AS prices_json
+            FROM {staging_table}
+            ) sub
+            WHERE COALESCE((prices_json->>'purchaseOption'), 'on_demand') IS NOT NULL
+            AND COALESCE((prices_json->>'purchaseOption'), 'on_demand') <> ''
+            ON CONFLICT (name) DO NOTHING;
+            """
+        cur.execute(sql)
+        inserted = cur.rowcount
+        connection.commit()
+        logger.info("Inserted %d pricing model records", inserted)
+
+    return "OK: staging load complete"
+
     with connection.cursor() as cur:
         upsert_sql = f"""
         WITH staged AS (
