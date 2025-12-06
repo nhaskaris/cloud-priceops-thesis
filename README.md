@@ -56,6 +56,10 @@
 - Re-worked models
 - Re-working weekly dump
 
+# 6.12
+- Finally done with weekly dump, switched everything to use sql statements directly and we slowly fill step by step each table.
+- Added description & term_length to normalized table because amazon has multiple price points for same product but changes a few things.
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update

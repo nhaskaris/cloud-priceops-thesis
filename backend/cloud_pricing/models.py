@@ -95,6 +95,8 @@ class NormalizedPricingData(models.Model):
     instance_type = models.CharField(max_length=100, blank=True)
     operating_system = models.CharField(max_length=100, blank=True)
     tenancy = models.CharField(max_length=50, blank=True)
+    term_length = models.CharField(max_length=50, blank=True)
+    description = models.TextField(blank=True)
 
     # Pricing values
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
@@ -129,8 +131,6 @@ class NormalizedPricingData(models.Model):
 class PriceHistory(models.Model):
     """Historical pricing data"""
     pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE, related_name='history')
-    price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    price_per_month = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     change_percentage = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     recorded_at = models.DateTimeField(default=timezone.now)
@@ -145,51 +145,56 @@ class PriceHistory(models.Model):
 
 class APICallLog(models.Model):
     """API call logs for monitoring and rate-limiting"""
-    provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE)
     api_endpoint = models.URLField()
     status_code = models.IntegerField()
-    response_time = models.DecimalField(max_digits=8, decimal_places=3)  # in seconds
     records_updated = models.IntegerField(default=0)
-    error_message = models.TextField(blank=True)
     called_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ['-called_at']
 
     def __str__(self):
-        return f"{self.provider.name.upper()} API call at {self.called_at}"
+        return f"API call at {self.called_at}"
 
 
 class RawPricingData(models.Model):
     """Raw pricing payloads from upstream sources (e.g. Infracost).
 
-    Each price node received from an external API is stored here verbatim so
-    we can re-run transforms, audits, or troubleshooting without losing the
-    original payload. Optionally linked to a normalized `NormalizedPricingData` record.
+    Each price node received from an external API is stored here verbatim
+    and uniquely identified by `product_hash`. Optionally linked to a normalized
+    `NormalizedPricingData` record.
     """
-    provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE, related_name='raw_pricing')
-    node_id = models.CharField(max_length=200, blank=True, null=True, help_text="Optional upstream id for dedupe")
-    raw_json = models.TextField()
-    digest = models.CharField(max_length=40, blank=True, db_index=True) 
-    source_api = models.CharField(max_length=100, blank=True, default='infracost')
+
+    product_hash = models.CharField(
+        max_length=200,
+        unique=True,
+        help_text="Unique hash of the raw pricing entry for deduplication"
+    )
+    raw_json = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional raw JSON payload for auditing/debugging"
+    )
+    normalized = models.ForeignKey(
+        'NormalizedPricingData',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='raw_entries'
+    )
+    source_api = models.CharField(
+        max_length=100,
+        blank=True,
+        default='infracost'
+    )
     fetched_at = models.DateTimeField(default=timezone.now)
-    # Link to the normalized pricing record when available
-    normalized = models.ForeignKey('NormalizedPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='raw_entries')
 
     class Meta:
+        db_table = "cloud_pricing_rawpricingdata"
         indexes = [
-            models.Index(fields=['provider', 'node_id']),
+            models.Index(fields=['product_hash']),
             models.Index(fields=['fetched_at']),
-            models.Index(fields=['provider', 'node_id', 'digest'], name="idx_provider_node_digest"),
-        ]
-
-        constraints = [
-            models.UniqueConstraint(
-                fields=['provider', 'node_id', 'digest'],
-                name='uq_provider_node_digest',
-            )
         ]
 
     def __str__(self):
-        nid = self.node_id or '(no id)'
-        return f"Raw pricing {self.provider.name.upper()} {nid} @ {self.fetched_at}"
+        return f"RawPricingData {self.product_hash} @ {self.fetched_at}"

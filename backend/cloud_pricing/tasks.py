@@ -39,6 +39,194 @@ logger = logging.getLogger(__name__)
 DATA_DOWNLOAD_URL = "https://pricing.api.infracost.io/data-download/latest"
 INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
 
+def _return_sql_string_to_execute():
+    return """
+WITH
+
+-- -----------------------------------------------
+-- 1. Extract normalized rows from staging
+-- -----------------------------------------------
+normalized_input AS (
+    SELECT
+        cp.id AS provider_id,
+        cs.id AS service_id,
+        cr.id AS region_id,
+        pm.id AS pricing_model_id,
+        c.id AS currency_id,
+
+        COALESCE(s.attributes::jsonb->>'instanceFamily', '') AS product_family,
+        COALESCE(s.attributes::jsonb->>'instanceType', '') AS instance_type,
+        COALESCE(s.attributes::jsonb->>'operatingSystem', '') AS operating_system,
+        COALESCE(s.attributes::jsonb->>'tenancy', '') AS tenancy,
+
+        (price_elem->>'USD')::numeric AS price_per_unit,
+        price_elem->>'unit' AS price_unit,
+
+        -- NEW FIELDS (SAFE NOT NULL)
+        COALESCE(price_elem->>'description', '') AS description,
+        COALESCE(price_elem->>'termLength', '') AS term_length,
+
+        -- Parse dates safely
+        CASE
+            WHEN price_elem->>'effectiveDateStart' ~ '^[A-Z][a-z]{2} [A-Z][a-z]{2}' THEN
+                to_timestamp(
+                    regexp_replace(
+                        price_elem->>'effectiveDateStart',
+                        '^([A-Za-z]{3}) ([A-Za-z]{3}) (\\d{2}) (\\d{4}) (\\d{2}:\\d{2}:\\d{2}).*$',
+                        '\\4-\\2-\\3 \\5',
+                        'g'
+                    ),
+                    'YYYY-Mon-DD HH24:MI:SS'
+                ) AT TIME ZONE 'UTC'
+            ELSE
+                (price_elem->>'effectiveDateStart')::timestamptz
+        END AS effective_date,
+
+        s.producthash AS product_hash,
+        NOW() AS created_at,
+        NOW() AS updated_at,
+        'infracost' AS source_api
+
+    FROM infracost_staging_prices s
+    CROSS JOIN LATERAL jsonb_each(s.prices::jsonb) AS top_level(key, value)
+    CROSS JOIN LATERAL jsonb_array_elements(value) AS price_elem
+    JOIN cloud_pricing_cloudprovider cp ON cp.name = LOWER(s.vendorname)
+    JOIN cloud_pricing_cloudservice cs ON cs.provider_id = cp.id AND cs.name = s.service
+    JOIN cloud_pricing_region cr ON cr.provider_id = cp.id AND cr.name = s.region
+    JOIN cloud_pricing_pricingmodel pm ON pm.name = COALESCE(price_elem->>'purchaseOption', 'on_demand')
+    JOIN cloud_pricing_currency c ON c.code = 'USD'
+    WHERE (price_elem->>'USD') IS NOT NULL
+),
+
+-- -----------------------------------------------
+-- 2. Insert missing normalized pricing rows
+-- -----------------------------------------------
+inserted_rows AS (
+    INSERT INTO normalized_pricing_data (
+        provider_id, service_id, region_id, pricing_model_id, currency_id,
+        product_family, instance_type, operating_system, tenancy,
+        price_per_unit, price_unit,
+        description, term_length,
+        raw_entry_id,
+        effective_date, is_active, source_api,
+        created_at, updated_at
+    )
+    SELECT
+        n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
+        n.product_family, n.instance_type, n.operating_system, n.tenancy,
+        n.price_per_unit, n.price_unit,
+        n.description, n.term_length,
+        r.id AS raw_entry_id,
+        n.effective_date, TRUE, n.source_api,
+        n.created_at, n.updated_at
+    FROM normalized_input n
+    JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM normalized_pricing_data x
+        WHERE x.provider_id = n.provider_id
+          AND x.service_id = n.service_id
+          AND x.region_id = n.region_id
+          AND x.pricing_model_id = n.pricing_model_id
+          AND x.currency_id = n.currency_id
+          AND x.product_family = n.product_family
+          AND x.instance_type = n.instance_type
+          AND x.operating_system = n.operating_system
+          AND x.tenancy = n.tenancy
+          AND x.price_unit = n.price_unit
+    )
+    RETURNING id AS new_id
+),
+
+-- -----------------------------------------------
+-- 3. Detect price changes
+-- -----------------------------------------------
+changed AS (
+    SELECT
+        old.id AS normalized_id,
+        old.price_per_unit AS old_price,
+        newd.price_per_unit AS new_price
+    FROM normalized_pricing_data old
+    JOIN normalized_input newd
+        ON old.provider_id = newd.provider_id
+       AND old.service_id = newd.service_id
+       AND old.region_id = newd.region_id
+       AND old.pricing_model_id = newd.pricing_model_id
+       AND old.currency_id = newd.currency_id
+       AND old.product_family = newd.product_family
+       AND old.instance_type = newd.instance_type
+       AND old.operating_system = newd.operating_system
+       AND old.tenancy = newd.tenancy
+       AND old.price_unit = newd.price_unit
+    WHERE old.price_per_unit <> newd.price_per_unit
+),
+
+-- -----------------------------------------------
+-- 4. Insert price history
+-- -----------------------------------------------
+history_insert AS (
+    INSERT INTO price_history (pricing_data_id, price_per_unit, change_percentage, recorded_at)
+    SELECT
+        normalized_id,
+        new_price,
+        CASE WHEN old_price = 0 THEN NULL
+             ELSE ROUND(((new_price - old_price) / old_price) * 100.0, 2)
+        END,
+        NOW()
+    FROM changed
+    RETURNING pricing_data_id
+),
+
+-- -----------------------------------------------
+-- 5. Update existing normalized records
+-- -----------------------------------------------
+updated_rows AS (
+    UPDATE normalized_pricing_data dst
+    SET
+        price_per_unit = src.price_per_unit,
+        description = src.description,
+        term_length = src.term_length,
+        effective_date = src.effective_date,
+        updated_at = NOW()
+    FROM normalized_input src
+    WHERE dst.provider_id = src.provider_id
+      AND dst.service_id = src.service_id
+      AND dst.region_id = src.region_id
+      AND dst.pricing_model_id = src.pricing_model_id
+      AND dst.currency_id = src.currency_id
+      AND dst.product_family = src.product_family
+      AND dst.instance_type = src.instance_type
+      AND dst.operating_system = src.operating_system
+      AND dst.tenancy = src.tenancy
+      AND dst.price_unit = src.price_unit
+    RETURNING dst.id
+)
+
+-- -----------------------------------------------
+-- 6. Return counts
+-- -----------------------------------------------
+SELECT 
+    (SELECT COUNT(*) FROM inserted_rows) AS inserted_count,
+    (SELECT COUNT(*) FROM updated_rows) AS updated_count;
+"""
+
+def _return_sql_string_raw():
+    return """
+INSERT INTO cloud_pricing_rawpricingdata (
+    product_hash,
+    raw_json,
+    source_api,
+    fetched_at
+)
+SELECT
+    s.producthash AS product_hash,
+    s.prices::jsonb::text AS raw_json,
+    'infracost' AS source_api,
+    NOW() AS fetched_at
+FROM infracost_staging_prices s
+ON CONFLICT (product_hash) DO NOTHING;
+"""
+
 @shared_task
 def weekly_pricing_dump_update():
     """
@@ -240,9 +428,7 @@ def weekly_pricing_dump_update():
     start_time = time.time()
     total_saved = 0
 
-    # TODO: upsert cloud service
-    # From infracost_staging_prices table get service, vendorname to map to provider
-    
+    # Insert Cloud Service
     with connection.cursor() as cur:
         cur.execute(f"""
             INSERT INTO cloud_pricing_cloudservice
@@ -265,6 +451,7 @@ def weekly_pricing_dump_update():
         connection.commit()
         logger.info("Inserted %d cloud service records", inserted)
 
+    # Insert Region
     with connection.cursor() as cur:
         cur.execute(f"""
             INSERT INTO cloud_pricing_region
@@ -286,62 +473,44 @@ def weekly_pricing_dump_update():
         connection.commit()
         logger.info("Inserted %d region records", inserted)
 
-
-    # TODO: upsert pricing model
-    #IN order to get the pricing model, we need to parse prices column as JSON and get the purchaseOption field if it exists.
-    
+    # Insert Pricing Model
     with connection.cursor() as cur:
         sql = f"""
             INSERT INTO cloud_pricing_pricingmodel (name)
             SELECT DISTINCT
-            COALESCE((prices_json->>'purchaseOption'), 'on_demand') AS pricing_model_name
+                COALESCE(elem->>'purchaseOption', 'on_demand')
             FROM (
-            SELECT
-                CASE
-                WHEN prices IS NOT NULL AND prices <> ''
-                THEN prices::json
-                ELSE '{{}}'::json
-                END AS prices_json
-            FROM {staging_table}
+                SELECT json_array_elements(value)::json AS elem
+                FROM {staging_table},
+                    json_each(prices::json) AS t(key, value)
             ) sub
-            WHERE COALESCE((prices_json->>'purchaseOption'), 'on_demand') IS NOT NULL
-            AND COALESCE((prices_json->>'purchaseOption'), 'on_demand') <> ''
+            WHERE COALESCE(elem->>'purchaseOption', '') <> ''
             ON CONFLICT (name) DO NOTHING;
-            """
+        """
+
         cur.execute(sql)
         inserted = cur.rowcount
         connection.commit()
         logger.info("Inserted %d pricing model records", inserted)
 
-    return "OK: staging load complete"
-
+    # Insert RawPricingData
+    sql = _return_sql_string_raw()
     with connection.cursor() as cur:
-        upsert_sql = f"""
-        WITH staged AS (
-            SELECT * FROM {staging_table} sp
-            LEFT JOIN cloud_pricing_cloudprovider cp
-              ON cp.name = LOWER(sp.vendorName)
-            LEFT JOIN cloud_pricing_cloudservice cs
-              ON cs.provider_id = cp.id AND cs.service_code = sp.service
-        )
-        INSERT INTO normalized_pricing_data
-        (provider_id, service_id, region_id, pricing_model_id, currency_id,
-         price_per_unit, effective_date, raw_entry_id, created_at, updated_at)
-        SELECT
-            s.provider_id,
-            '',
-            s.region_id,
-            s.pricing_model_id,
-            s.currency_id,
-            s.price_per_unit,
-            s.effective_date,
-            re.id AS raw_entry_id,
-            NOW(),
-            NOW()
-        FROM staged s
-        """
-        cur.execute(upsert_sql)
-        total_saved = cur.rowcount
+        cur.execute(sql)
+        inserted = cur.rowcount
+        connection.commit()
+        total_saved += inserted
+        logger.info("Inserted %d raw pricing data records", inserted)
+
+    # Upsert NormalizedPricingData
+    sql = _return_sql_string_to_execute()
+    with connection.cursor() as cur:
+        cur.execute(sql)
+        inserted_count, updated_count = cur.fetchone()
+        connection.commit()
+        total_saved += inserted_count + updated_count
+        logger.info("Inserted %d normalized rows, updated %d rows", inserted_count, updated_count)
+
 
     final_elapsed = time.time() - start_time
     logger.info("✓ SQL processing complete: %d records processed in %.1fs", total_saved, final_elapsed)
@@ -354,36 +523,23 @@ def weekly_pricing_dump_update():
 
     # APICallLog(s)
     try:
-        with connection.cursor() as cur:
-            cur.execute("SELECT DISTINCT provider_code FROM staging_parsed")
-            provider_codes = [r[0] for r in cur.fetchall()]
-        for pc in provider_codes:
-            try:
-                prov = CloudProvider.objects.get(name=pc)
-            except CloudProvider.DoesNotExist:
-                continue
-            try:
-                APICallLog.objects.create(
-                    provider=prov,
-                    api_endpoint=DATA_DOWNLOAD_URL,
-                    status_code=200,
-                    response_time=final_elapsed,
-                    records_updated=total_saved,
-                    error_message=""
-                )
-            except Exception:
-                logger.exception("Failed to write APICallLog for provider %s", pc)
+        APICallLog.objects.create(
+            api_endpoint=DATA_DOWNLOAD_URL,  # the URL you fetched
+            status_code=200,                  # success
+            records_updated=total_saved,      # number of rows upserted
+            called_at=timezone.now()          # timestamp
+        )
     except Exception:
-        logger.exception("Failed to create APICallLog(s)")
+        logger.exception("Failed to create APICallLog")
 
     # drop staging
-    # try:
-    #     with connection.cursor() as cur:
-    #         cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
-    #         connection.commit()
-    #     logger.info("Staging table %s dropped successfully", staging_table)
-    # except Exception as e:
-    #     logger.warning("Could not drop staging table %s: %s", staging_table, e)
+    try:
+        with connection.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
+            connection.commit()
+        logger.info("Staging table %s dropped successfully", staging_table)
+    except Exception as e:
+        logger.warning("Could not drop staging table %s: %s", staging_table, e)
 
     return f"OK: saved {total_saved}"
 
