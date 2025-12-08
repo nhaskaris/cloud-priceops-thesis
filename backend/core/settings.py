@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'cloud_pricing.apps.CloudPricingConfig',
     'feast_offline.apps.FeastOfflineConfig',
+    'model_registry.apps.ModelRegistryConfig',
 ]
 
 MIDDLEWARE = [
@@ -141,7 +142,7 @@ AUTHENTICATION_BACKENDS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
-        # 'rest_framework.authentication.TokenAuthentication',  # Uncomment if you want token auth
+        # 'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',

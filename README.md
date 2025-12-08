@@ -62,6 +62,7 @@
 
 # 8.12
 - Re-worked feature store and we are currently saving the price of products. If same product come with different price it will create a new row. (This will help our postgres offline store)
+- Created model registry app
 
 ### DOC
 ```docker exec -it priceops_celery_worker \
