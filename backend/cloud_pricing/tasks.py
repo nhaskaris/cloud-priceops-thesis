@@ -1,38 +1,16 @@
 import os
-import gzip
-import json
-import tempfile
 import logging
-import requests
 
 from django.utils import timezone
-from decimal import Decimal
-from datetime import datetime, timedelta
-
-from celery import shared_task
-from django.db import connection, transaction
-from django.db.utils import IntegrityError
-from django.conf import settings
-from django.db.models import OuterRef, Subquery, Count
 
 from .models import (
     CloudProvider,
-    NormalizedPricingData,
-    RawPricingData,
-    CloudService,
-    Region,
-    PricingModel,
     Currency,
     APICallLog,
-    PriceHistory,
 )
 
-from feast import FeatureStore
-from feast.data_source import PushMode
-import pandas as pd
 from celery import shared_task
 from django.db import connection
-from django.utils import timezone as dj_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -542,152 +520,3 @@ def weekly_pricing_dump_update():
         logger.warning("Could not drop staging table %s: %s", staging_table, e)
 
     return f"OK: saved {total_saved}"
-
-@shared_task
-def materialize_features(batch_size: int = 5000):
-    """
-    Materialize features into Feast offline (Postgres) + online (Redis) store.
-    """
-    fs = FeatureStore(repo_path="feature_repo")
-    total_pushed = 0
-    last_id = 0
-
-    while True:
-        # -----------------------------
-        # 1. Fetch batch from normalized_pricing_data with previous price
-        # -----------------------------
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT
-                    id,
-                    provider_id,
-                    service_id,
-                    region_id,
-                    instance_type,
-                    operating_system,
-                    tenancy,
-                    pricing_model_id,
-                    price_per_unit,
-                    effective_date,
-                    LAG(price_per_unit) OVER (
-                        PARTITION BY provider_id, service_id, region_id, instance_type,
-                                    operating_system, tenancy, pricing_model_id
-                        ORDER BY effective_date
-                    ) AS previous_price
-                FROM normalized_pricing_data
-                WHERE id > %s
-                ORDER BY id
-                LIMIT %s;
-            """, [last_id, batch_size])
-            rows = cursor.fetchall()
-
-        if not rows:
-            break
-
-        (
-            IDX_ID,
-            IDX_PROVIDER_ID,
-            IDX_SERVICE_ID,
-            IDX_REGION_ID,
-            IDX_INSTANCE_TYPE,
-            IDX_OS,
-            IDX_TENANCY,
-            IDX_MODEL_ID,
-            IDX_PRICE,
-            IDX_EFFECTIVE,
-            IDX_PREV_PRICE,
-        ) = range(11)
-        batch_ids = [r[IDX_ID] for r in rows]
-
-        # -----------------------------
-        # 2. Get 90-day price change frequency
-        # -----------------------------
-        since = dj_timezone.now() - timedelta(days=90)
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT pricing_data_id, COUNT(*) AS cnt
-                FROM price_history
-                WHERE recorded_at >= %s
-                  AND pricing_data_id = ANY(%s)
-                GROUP BY pricing_data_id;
-            """, [since, batch_ids])
-            freq_map = {pid: cnt for pid, cnt in cursor.fetchall()}
-
-        # -----------------------------
-        # 3. Build feature rows
-        # -----------------------------
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        feature_rows = []
-
-        for r in rows:
-            rec_id = r[IDX_ID]
-            current_price = r[IDX_PRICE]
-            previous_price = r[IDX_PREV_PRICE]
-            effective_date = r[IDX_EFFECTIVE]
-
-            # price diffs
-            price_diff_abs = price_diff_pct = None
-            if current_price is not None and previous_price is not None:
-                try:
-                    price_diff_abs = float(Decimal(current_price) - Decimal(previous_price))
-                    if previous_price != 0:
-                        price_diff_pct = float((Decimal(current_price) - Decimal(previous_price)) / Decimal(previous_price))
-                except Exception:
-                    pass
-
-            # days since last change
-            days_since_change = (now - effective_date).days if effective_date else None
-
-            feature_rows.append({
-                "pricing_data_id": rec_id,
-                "event_timestamp": effective_date or now,
-                "current_price": float(current_price) if current_price is not None else None,
-                "previous_price": float(previous_price) if previous_price is not None else None,
-                "price_diff_abs": price_diff_abs,
-                "price_diff_pct": price_diff_pct,
-                "days_since_price_change": float(days_since_change) if days_since_change is not None else None,
-                "price_change_frequency_90d": float(freq_map.get(rec_id, 0)),
-                "created": now
-            })
-
-        df = pd.DataFrame(feature_rows)
-
-        # -----------------------------
-        # 4. Insert into offline store table (Postgres)
-        # -----------------------------
-        if not df.empty:
-            with connection.cursor() as cursor:
-                cols = list(df.columns)
-                values_str = ",".join(
-                    cursor.mogrify(
-                        f"({','.join(['%s']*len(cols))})", tuple(row)
-                    )
-                    for row in df.to_numpy()
-                )
-                insert_sql = f"""
-                    INSERT INTO pricing_features ({','.join(cols)})
-                    VALUES {values_str}
-                    ON CONFLICT (pricing_data_id, event_timestamp) DO UPDATE SET
-                        current_price = EXCLUDED.current_price,
-                        previous_price = EXCLUDED.previous_price,
-                        price_diff_abs = EXCLUDED.price_diff_abs,
-                        price_diff_pct = EXCLUDED.price_diff_pct,
-                        days_since_price_change = EXCLUDED.days_since_price_change,
-                        price_change_frequency_90d = EXCLUDED.price_change_frequency_90d,
-                        created = EXCLUDED.created;
-                """
-                cursor.execute(insert_sql)
-
-        # -----------------------------
-        # 5. Push to online store (Redis)
-        # -----------------------------
-        fs.push(
-            push_source_name="pricing_data_push_source",
-            df=df,
-            to=PushMode.ONLINE
-        )
-
-        total_pushed += len(df)
-        last_id = batch_ids[-1]
-
-    return {"pushed": total_pushed}

@@ -27,7 +27,7 @@ class GetOnlineFeaturesAPIView(APIView):
     def get_feature_store(self):
         """Initialize and return Feast FeatureStore instance."""
         try:
-            fs = FeatureStore(repo_path="feature_repo")
+            fs = FeatureStore(repo_path="feast_offline/feature_repo")
             return fs
         except Exception as e:
             logger.error(f"Failed to initialize FeatureStore: {str(e)}")
@@ -176,7 +176,7 @@ class GetTrainingDataAPIView(APIView):
     def get_feature_store(self):
         """Initialize and return Feast FeatureStore instance."""
         try:
-            fs = FeatureStore(repo_path="feature_repo")
+            fs = FeatureStore(repo_path="feast_offline/feature_repo")
             return fs
         except Exception as e:
             logger.error(f"Failed to initialize FeatureStore: {str(e)}")

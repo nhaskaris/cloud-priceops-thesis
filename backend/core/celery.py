@@ -16,14 +16,14 @@ app.autodiscover_tasks()
 
 # Celery beat schedule for periodic tasks
 app.conf.beat_schedule = {
-    "weekly-infracost-dump": {
-        "task": "cloud_pricing.tasks.weekly_pricing_dump_update",
-        # Run every Sunday at 04:00 AM (adjust timezone / hour to your preference)
-        "schedule": crontab(hour=4, minute=0, day_of_week="sun"),
-    },
+    # "weekly-infracost-dump": {
+    #     "task": "cloud_pricing.tasks.weekly_pricing_dump_update",
+    #     # Run every Sunday at 04:00 AM (adjust timezone / hour to your preference)
+    #     "schedule": crontab(hour=4, minute=0, day_of_week="sun"),
+    # },
     # Run a task after every pricing data import to update features
     # "post-import-feature-update": {
-    #     "task": "cloud_pricing.tasks.materialize_features",
+    #     "task": "feast_offline.tasks.materialize_features",
     #     "schedule": crontab(minute="*/15"),
     # },
 }

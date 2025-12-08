@@ -60,6 +60,9 @@
 - Finally done with weekly dump, switched everything to use sql statements directly and we slowly fill step by step each table.
 - Added description & term_length to normalized table because amazon has multiple price points for same product but changes a few things.
 
+# 8.12
+- Re-worked feature store and we are currently saving the price of products. If same product come with different price it will create a new row. (This will help our postgres offline store)
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
@@ -67,7 +70,7 @@
 
 ```
 docker exec -it priceops_celery_worker \
-  celery -A core call cloud_pricing.tasks.materialize_features
+  celery -A core call feast_offline.tasks.materialize_features
 ```
 
 ```
