@@ -100,13 +100,60 @@ class RawPricingDataSerializer(serializers.ModelSerializer):
 
 
 class TCORequestSerializer(serializers.Serializer):
-    name = serializers.CharField(required=False, allow_blank=True)
-    # Allow users to specify resource intent instead of exact instance type
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional name for this TCO request.",
+    )
+
     RESOURCE_CHOICES = ('cpu', 'gpu', 'memory', 'storage', 'generic')
-    resource_type = serializers.ChoiceField(choices=RESOURCE_CHOICES, required=False, default='cpu')
-    cpu_hours_per_month = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=720)
-    storage_gb = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=0)
-    egress_gb = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, default=0)
-    duration_months = serializers.IntegerField(required=False, default=12)
-    region_preferences = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
-    providers = serializers.ListField(child=serializers.CharField(), required=False, allow_empty=True)
+    resource_type = serializers.ChoiceField(
+        choices=RESOURCE_CHOICES,
+        required=False,
+        default='cpu',
+        help_text="Type of resource to optimize for. Default: cpu.",
+    )
+
+    cpu_hours_per_month = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        required=False,
+        default=720,
+        help_text="Compute hours per month. Default = 720 (full-time).",
+    )
+
+    storage_gb = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        required=False,
+        default=0,
+        help_text="Optional storage requirement in GB.",
+    )
+
+    egress_gb = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        required=False,
+        default=0,
+        help_text="Optional network egress in GB.",
+    )
+
+    duration_months = serializers.IntegerField(
+        required=False,
+        default=12,
+        help_text="Total project duration in months.",
+    )
+
+    region_preferences = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        help_text="List of preferred regions, e.g. ['us-east-1', 'eu-west-1'].",
+    )
+
+    providers = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        help_text="Cloud providers to evaluate. Defaults to ['aws','azure','gcp'].",
+    )

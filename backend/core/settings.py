@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'cloud_pricing.apps.CloudPricingConfig',
     'feast_offline.apps.FeastOfflineConfig',
     'model_registry.apps.ModelRegistryConfig',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -155,6 +156,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # CORS settings for API access
@@ -177,3 +179,11 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+
+# DRF Spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Cloud PriceOps API',
+    'DESCRIPTION': 'API documentation for Cloud PriceOps backend services.',
+    'VERSION': '0.1.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}

@@ -4,6 +4,7 @@ djangorestframework
 django-cors-headers
 python-dotenv
 whitenoise
+drf-spectacular
 
 # Database
 psycopg[binary,pool]

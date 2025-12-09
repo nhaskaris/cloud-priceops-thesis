@@ -154,6 +154,7 @@ class TCOView(APIView):
     """Simple TCO estimator endpoint for the frontend MVP."""
     # Explicitly allow anonymous access so the frontend can call this endpoint
     permission_classes = [AllowAny]
+    serializer_class = TCORequestSerializer
 
     def post(self, request):
         serializer = TCORequestSerializer(data=request.data)
