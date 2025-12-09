@@ -5,3 +5,5 @@ __pycache__/
 
 # Celery beat schedule file
 celerybeat-schedule
+
+*.csv.gz

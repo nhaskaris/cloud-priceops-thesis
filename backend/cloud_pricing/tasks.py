@@ -40,11 +40,9 @@ normalized_input AS (
         (price_elem->>'USD')::numeric AS price_per_unit,
         price_elem->>'unit' AS price_unit,
 
-        -- NEW FIELDS (SAFE NOT NULL)
         COALESCE(price_elem->>'description', '') AS description,
         COALESCE(price_elem->>'termLength', '') AS term_length,
 
-        -- Parse dates safely
         CASE
             WHEN price_elem->>'effectiveDateStart' ~ '^[A-Z][a-z]{2} [A-Z][a-z]{2}' THEN
                 to_timestamp(
@@ -240,6 +238,8 @@ def weekly_pricing_dump_update():
         if not download_url:
             logger.error("downloadUrl not found in response: %s", meta)
             raise ValueError("no downloadUrl")
+        logger.info("Fetched download URL")
+        logger.info("Download URL: %s", download_url)
         return download_url
 
     def _download_to_tempfile(download_url):
@@ -249,10 +249,22 @@ def weekly_pricing_dump_update():
         try:
             with requests.get(download_url, stream=True, timeout=120) as r2:
                 r2.raise_for_status()
+                total_size = int(r2.headers.get('content-length', 0))
+                downloaded = 0
+                last_logged_progress = 0
                 with open(tmp_path, "wb") as f:
                     for chunk in r2.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size:
+                                progress = (downloaded / total_size) * 100
+                                if progress - last_logged_progress >= 10:
+                                    logger.info("Download progress: %.1f%% (%d / %d bytes)", 
+                                              progress, downloaded, total_size)
+                                    last_logged_progress = progress
+                            else:
+                                logger.info("Downloaded: %d bytes", downloaded)
             logger.info("Downloaded dump to %s", tmp_path)
             return tmp_path
         except Exception:
@@ -341,17 +353,26 @@ def weekly_pricing_dump_update():
         return staging_table
 
     # ---- orchestrate fetch/load ----
-    try:
-        download_url = _get_download_url()
-    except ValueError:
-        return "FAIL: no downloadUrl"
-    except Exception as e:
-        return f"FAIL: metadata error {e}"
+    LOCAL_PATH = "/app/data/dump.csv.gz"
 
-    try:
-        tmp_path = _download_to_tempfile(download_url)
-    except Exception as e:
-        return f"FAIL: download crashed {e}"
+    # --- If local dump exists, skip network ---
+    if os.path.exists(LOCAL_PATH):
+        logger.info("Using local Infracost dump: %s", LOCAL_PATH)
+        tmp_path = LOCAL_PATH
+    else:
+        logger.info("Local dump not found. Downloading new dump...")
+        
+        try:
+            download_url = _get_download_url()
+        except ValueError:
+            return "FAIL: no downloadUrl"
+        except Exception as e:
+            return f"FAIL: metadata error {e}"
+
+        try:
+            tmp_path = _download_to_tempfile(download_url)
+        except Exception as e:
+            return f"FAIL: download crashed {e}"
 
     try:
         staging_table = _create_and_load_staging(tmp_path)

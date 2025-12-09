@@ -115,13 +115,9 @@ class NormalizedPricingData(models.Model):
     class Meta:
         db_table = "normalized_pricing_data"
         indexes = [
-            models.Index(fields=['provider', 'service', 'region']),
-            models.Index(fields=['instance_type']),
             models.Index(fields=['effective_date']),
             models.Index(fields=['is_active']),
-
             models.Index(fields=['price_per_unit'], name='idx_price_positive', condition=models.Q(price_per_unit__gt=0)),
-
         ]
 
     def __str__(self):
