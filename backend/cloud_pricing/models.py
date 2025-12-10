@@ -115,9 +115,50 @@ class NormalizedPricingData(models.Model):
     class Meta:
         db_table = "normalized_pricing_data"
         indexes = [
+            # Existing indexes
             models.Index(fields=['effective_date']),
             models.Index(fields=['is_active']),
             models.Index(fields=['price_per_unit'], name='idx_price_positive', condition=models.Q(price_per_unit__gt=0)),
+            
+            # NEW INDEXES:
+            
+            # 1. Composite index for the EXISTS subquery (most critical!)
+            models.Index(
+                fields=[
+                    'provider', 'service', 'region', 'pricing_model', 'currency',
+                    'product_family', 'instance_type', 'operating_system', 
+                    'tenancy', 'price_unit'
+                ],
+                name='idx_npd_unique_combo'
+            ),
+            
+            # 2. Composite index for price change detection
+            models.Index(
+                fields=[
+                    'provider', 'service', 'region', 'pricing_model', 'currency',
+                    'product_family', 'instance_type', 'operating_system', 
+                    'tenancy', 'price_unit', 'price_per_unit'
+                ],
+                name='idx_npd_price_change_detection'
+            ),
+            
+            # 3. Index for raw_entry joins
+            models.Index(fields=['raw_entry'], name='idx_npd_raw_entry'),
+            
+            # 4. Composite index for effective date filtering
+            models.Index(
+                fields=['is_active', 'effective_date'],
+                name='idx_npd_active_effective'
+            ),
+            
+            # 5. Index for source_api queries
+            models.Index(fields=['source_api'], name='idx_npd_source_api'),
+            
+            # 6. Index for provider-service-region combinations
+            models.Index(
+                fields=['provider', 'service', 'region'],
+                name='idx_npd_prov_serv_reg'
+            ),
         ]
 
     def __str__(self):

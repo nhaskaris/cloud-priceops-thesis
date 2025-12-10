@@ -379,7 +379,7 @@ def weekly_pricing_dump_update():
     except Exception as e:
         logger.exception("Staging load failed: %s", e)
         return f"FAIL: staging load error {e}"
-
+    
     # helper for canonical provider
     def canonical_provider_key(vendor_raw):
         if not vendor_raw:
