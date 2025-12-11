@@ -41,7 +41,7 @@ normalized_input AS (
         price_elem->>'unit' AS price_unit,
 
         COALESCE(price_elem->>'description', '') AS description,
-        COALESCE(price_elem->>'termLength', '') AS term_length,
+        COALESCE(regexp_replace(price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
 
         CASE
             WHEN price_elem->>'effectiveDateStart' ~ '^[A-Z][a-z]{2} [A-Z][a-z]{2}' THEN
@@ -82,7 +82,7 @@ inserted_rows AS (
         provider_id, service_id, region_id, pricing_model_id, currency_id,
         product_family, instance_type, operating_system, tenancy,
         price_per_unit, price_unit,
-        description, term_length,
+        description, term_length_year,
         raw_entry_id,
         effective_date, is_active, source_api,
         created_at, updated_at
@@ -91,7 +91,7 @@ inserted_rows AS (
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
         n.product_family, n.instance_type, n.operating_system, n.tenancy,
         n.price_per_unit, n.price_unit,
-        n.description, n.term_length,
+        n.description, n.term_length_year,
         r.id AS raw_entry_id,
         n.effective_date, TRUE, n.source_api,
         n.created_at, n.updated_at
@@ -161,7 +161,7 @@ updated_rows AS (
     SET
         price_per_unit = src.price_per_unit,
         description = src.description,
-        term_length = src.term_length,
+        term_length_year = src.term_length_year,
         effective_date = src.effective_date,
         updated_at = NOW()
     FROM normalized_input src

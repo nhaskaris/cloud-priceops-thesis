@@ -91,12 +91,15 @@ class NormalizedPricingData(models.Model):
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE)
 
     # Product details
-    product_family = models.CharField(max_length=100, blank=True)  # Compute, Storage, etc.
+    product_family = models.CharField(max_length=100, blank=True)
     instance_type = models.CharField(max_length=100, blank=True)
     operating_system = models.CharField(max_length=100, blank=True)
     tenancy = models.CharField(max_length=50, blank=True)
-    term_length = models.CharField(max_length=50, blank=True)
+    term_length_year = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
+    vcpu_count = models.IntegerField(null=True, blank=True)
+    memory_gb = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    storage_type = models.CharField(max_length=100, blank=True, null=True)
 
     # Pricing values
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
@@ -105,7 +108,7 @@ class NormalizedPricingData(models.Model):
     raw_entry = models.ForeignKey('RawPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='canonical_normalized')
 
     # Lifecycle tracking
-    effective_date = models.DateTimeField(default=datetime.now)
+    effective_date = models.DateTimeField(default=datetime.now, null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     source_api = models.CharField(max_length=100, blank=True, default="infracost")
@@ -114,47 +117,36 @@ class NormalizedPricingData(models.Model):
 
     class Meta:
         db_table = "normalized_pricing_data"
+        # UNIQUE constraint for ON CONFLICT upserts
         indexes = [
-            # Existing indexes
+            # Existing useful indexes
             models.Index(fields=['effective_date']),
             models.Index(fields=['is_active']),
             models.Index(fields=['price_per_unit'], name='idx_price_positive', condition=models.Q(price_per_unit__gt=0)),
-            
-            # NEW INDEXES:
-            
-            # 1. Composite index for the EXISTS subquery (most critical!)
+
+            # Composite index for price change detection
             models.Index(
                 fields=[
                     'provider', 'service', 'region', 'pricing_model', 'currency',
-                    'product_family', 'instance_type', 'operating_system', 
-                    'tenancy', 'price_unit'
-                ],
-                name='idx_npd_unique_combo'
-            ),
-            
-            # 2. Composite index for price change detection
-            models.Index(
-                fields=[
-                    'provider', 'service', 'region', 'pricing_model', 'currency',
-                    'product_family', 'instance_type', 'operating_system', 
+                    'product_family', 'instance_type', 'operating_system',
                     'tenancy', 'price_unit', 'price_per_unit'
                 ],
                 name='idx_npd_price_change_detection'
             ),
-            
-            # 3. Index for raw_entry joins
+
+            # Index for raw_entry joins
             models.Index(fields=['raw_entry'], name='idx_npd_raw_entry'),
-            
-            # 4. Composite index for effective date filtering
+
+            # Composite index for effective date filtering
             models.Index(
                 fields=['is_active', 'effective_date'],
                 name='idx_npd_active_effective'
             ),
-            
-            # 5. Index for source_api queries
+
+            # Index for source_api queries
             models.Index(fields=['source_api'], name='idx_npd_source_api'),
-            
-            # 6. Index for provider-service-region combinations
+
+            # Index for provider-service-region combinations
             models.Index(
                 fields=['provider', 'service', 'region'],
                 name='idx_npd_prov_serv_reg'

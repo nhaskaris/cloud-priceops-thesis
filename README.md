@@ -69,6 +69,9 @@
 - Added logging for download of file progress
 - Added a check to not download the file again if its locally so we dont spam infracost from dev.
 
+# 11.12
+- Normalized term_length
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
