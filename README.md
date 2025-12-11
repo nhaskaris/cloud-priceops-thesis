@@ -71,6 +71,7 @@
 
 # 11.12
 - Normalized term_length
+- Download file locally if it doesnt exist so we dont spam call their api
 
 ### DOC
 ```docker exec -it priceops_celery_worker \
