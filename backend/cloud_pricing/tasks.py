@@ -353,7 +353,9 @@ def weekly_pricing_dump_update():
         return staging_table
 
     # ---- orchestrate fetch/load ----
-    LOCAL_PATH = "/app/data/dump.csv.gz"
+    LOCAL_DIR = "/app/data"
+    LOCAL_PATH = os.path.join(LOCAL_DIR, "dump.csv.gz")
+    os.makedirs(LOCAL_DIR, exist_ok=True)
 
     # --- If local dump exists, skip network ---
     if os.path.exists(LOCAL_PATH):
@@ -369,10 +371,23 @@ def weekly_pricing_dump_update():
         except Exception as e:
             return f"FAIL: metadata error {e}"
 
+        # Download and save locally
+        tmp_path = LOCAL_PATH
         try:
-            tmp_path = _download_to_tempfile(download_url)
-        except Exception as e:
-            return f"FAIL: download crashed {e}"
+            with requests.get(download_url, stream=True, timeout=120) as r2:
+                r2.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in r2.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+            logger.info("Downloaded dump to %s", tmp_path)
+        except Exception:
+            logger.exception("Download error")
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            return "FAIL: download crashed"
 
     try:
         staging_table = _create_and_load_staging(tmp_path)
