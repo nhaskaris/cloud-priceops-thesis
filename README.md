@@ -71,7 +71,8 @@
 
 # 11.12
 - Normalized term_length
-- Download file locally if it doesnt exist so we dont spam call their api
+- Download file locally if it doesnt exist so we dont spam call their api.
+- Normalized cpu & storage_type into our columns
 
 ### DOC
 ```docker exec -it priceops_celery_worker \

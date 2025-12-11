@@ -17,52 +17,35 @@ logger = logging.getLogger(__name__)
 DATA_DOWNLOAD_URL = "https://pricing.api.infracost.io/data-download/latest"
 INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
 
-def _return_sql_string_to_execute():
+def _return_sql_insert_normalized():
     return """
-WITH
-
--- -----------------------------------------------
--- 1. Extract normalized rows from staging
--- -----------------------------------------------
-normalized_input AS (
+WITH normalized_input AS (
     SELECT
         cp.id AS provider_id,
         cs.id AS service_id,
         cr.id AS region_id,
         pm.id AS pricing_model_id,
         c.id AS currency_id,
-
         COALESCE(s.attributes::jsonb->>'instanceFamily', '') AS product_family,
         COALESCE(s.attributes::jsonb->>'instanceType', '') AS instance_type,
         COALESCE(s.attributes::jsonb->>'operatingSystem', '') AS operating_system,
         COALESCE(s.attributes::jsonb->>'tenancy', '') AS tenancy,
-
         (price_elem->>'USD')::numeric AS price_per_unit,
         price_elem->>'unit' AS price_unit,
-
         COALESCE(price_elem->>'description', '') AS description,
         COALESCE(regexp_replace(price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
 
-        CASE
-            WHEN price_elem->>'effectiveDateStart' ~ '^[A-Z][a-z]{2} [A-Z][a-z]{2}' THEN
-                to_timestamp(
-                    regexp_replace(
-                        price_elem->>'effectiveDateStart',
-                        '^([A-Za-z]{3}) ([A-Za-z]{3}) (\\d{2}) (\\d{4}) (\\d{2}:\\d{2}:\\d{2}).*$',
-                        '\\4-\\2-\\3 \\5',
-                        'g'
-                    ),
-                    'YYYY-Mon-DD HH24:MI:SS'
-                ) AT TIME ZONE 'UTC'
-            ELSE
-                (price_elem->>'effectiveDateStart')::timestamptz
-        END AS effective_date,
+        NULLIF(regexp_replace(s.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
+        CASE 
+            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%ssd%' THEN 'ssd'
+            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
+            ELSE COALESCE(s.attributes::jsonb->>'storageType', '')
+        END AS storage_type,
 
         s.producthash AS product_hash,
         NOW() AS created_at,
         NOW() AS updated_at,
         'infracost' AS source_api
-
     FROM infracost_staging_prices s
     CROSS JOIN LATERAL jsonb_each(s.prices::jsonb) AS top_level(key, value)
     CROSS JOIN LATERAL jsonb_array_elements(value) AS price_elem
@@ -73,10 +56,6 @@ normalized_input AS (
     JOIN cloud_pricing_currency c ON c.code = 'USD'
     WHERE (price_elem->>'USD') IS NOT NULL
 ),
-
--- -----------------------------------------------
--- 2. Insert missing normalized pricing rows
--- -----------------------------------------------
 inserted_rows AS (
     INSERT INTO normalized_pricing_data (
         provider_id, service_id, region_id, pricing_model_id, currency_id,
@@ -85,7 +64,7 @@ inserted_rows AS (
         description, term_length_year,
         raw_entry_id,
         effective_date, is_active, source_api,
-        created_at, updated_at
+        created_at, updated_at, vcpu_count, storage_type
     )
     SELECT
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
@@ -93,8 +72,8 @@ inserted_rows AS (
         n.price_per_unit, n.price_unit,
         n.description, n.term_length_year,
         r.id AS raw_entry_id,
-        n.effective_date, TRUE, n.source_api,
-        n.created_at, n.updated_at
+        NOW(), TRUE, n.source_api,
+        n.created_at, n.updated_at, n.vcpu_count, n.storage_type
     FROM normalized_input n
     JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
     WHERE NOT EXISTS (
@@ -111,12 +90,49 @@ inserted_rows AS (
           AND x.tenancy = n.tenancy
           AND x.price_unit = n.price_unit
     )
-    RETURNING id AS new_id
-),
+    RETURNING id
+)
+SELECT COUNT(*) AS inserted_count FROM inserted_rows;
+"""
 
--- -----------------------------------------------
--- 3. Detect price changes
--- -----------------------------------------------
+def _return_sql_check_updates_normalized():
+    return """
+WITH normalized_input AS (
+    SELECT
+        cp.id AS provider_id,
+        cs.id AS service_id,
+        cr.id AS region_id,
+        pm.id AS pricing_model_id,
+        c.id AS currency_id,
+        COALESCE(s.attributes::jsonb->>'instanceFamily', '') AS product_family,
+        COALESCE(s.attributes::jsonb->>'instanceType', '') AS instance_type,
+        COALESCE(s.attributes::jsonb->>'operatingSystem', '') AS operating_system,
+        COALESCE(s.attributes::jsonb->>'tenancy', '') AS tenancy,
+        (price_elem->>'USD')::numeric AS price_per_unit,
+        price_elem->>'unit' AS price_unit,
+        COALESCE(price_elem->>'description', '') AS description,
+        COALESCE(regexp_replace(price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
+
+        COALESCE(s.attributes::jsonb->>'vcpu', NULL)::integer AS vcpu_count,
+        CASE 
+            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%ssd%' THEN 'ssd'
+            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
+            ELSE COALESCE(s.attributes::jsonb->>'storageType', '')
+        END AS storage_type,
+
+        s.producthash AS product_hash,
+        NOW() AS updated_at,
+        'infracost' AS source_api
+    FROM infracost_staging_prices s
+    CROSS JOIN LATERAL jsonb_each(s.prices::jsonb) AS top_level(key, value)
+    CROSS JOIN LATERAL jsonb_array_elements(value) AS price_elem
+    JOIN cloud_pricing_cloudprovider cp ON cp.name = LOWER(s.vendorname)
+    JOIN cloud_pricing_cloudservice cs ON cs.provider_id = cp.id AND cs.name = s.service
+    JOIN cloud_pricing_region cr ON cr.provider_id = cp.id AND cr.name = s.region
+    JOIN cloud_pricing_pricingmodel pm ON pm.name = COALESCE(price_elem->>'purchaseOption', 'on_demand')
+    JOIN cloud_pricing_currency c ON c.code = 'USD'
+    WHERE (price_elem->>'USD') IS NOT NULL
+),
 changed AS (
     SELECT
         old.id AS normalized_id,
@@ -124,22 +140,18 @@ changed AS (
         newd.price_per_unit AS new_price
     FROM normalized_pricing_data old
     JOIN normalized_input newd
-        ON old.provider_id = newd.provider_id
-       AND old.service_id = newd.service_id
-       AND old.region_id = newd.region_id
-       AND old.pricing_model_id = newd.pricing_model_id
-       AND old.currency_id = newd.currency_id
-       AND old.product_family = newd.product_family
-       AND old.instance_type = newd.instance_type
-       AND old.operating_system = newd.operating_system
-       AND old.tenancy = newd.tenancy
-       AND old.price_unit = newd.price_unit
+      ON old.provider_id = newd.provider_id
+     AND old.service_id = newd.service_id
+     AND old.region_id = newd.region_id
+     AND old.pricing_model_id = newd.pricing_model_id
+     AND old.currency_id = newd.currency_id
+     AND old.product_family = newd.product_family
+     AND old.instance_type = newd.instance_type
+     AND old.operating_system = newd.operating_system
+     AND old.tenancy = newd.tenancy
+     AND old.price_unit = newd.price_unit
     WHERE old.price_per_unit <> newd.price_per_unit
 ),
-
--- -----------------------------------------------
--- 4. Insert price history
--- -----------------------------------------------
 history_insert AS (
     INSERT INTO price_history (pricing_data_id, price_per_unit, change_percentage, recorded_at)
     SELECT
@@ -152,17 +164,12 @@ history_insert AS (
     FROM changed
     RETURNING pricing_data_id
 ),
-
--- -----------------------------------------------
--- 5. Update existing normalized records
--- -----------------------------------------------
 updated_rows AS (
     UPDATE normalized_pricing_data dst
     SET
         price_per_unit = src.price_per_unit,
         description = src.description,
         term_length_year = src.term_length_year,
-        effective_date = src.effective_date,
         updated_at = NOW()
     FROM normalized_input src
     WHERE dst.provider_id = src.provider_id
@@ -177,12 +184,7 @@ updated_rows AS (
       AND dst.price_unit = src.price_unit
     RETURNING dst.id
 )
-
--- -----------------------------------------------
--- 6. Return counts
--- -----------------------------------------------
 SELECT 
-    (SELECT COUNT(*) FROM inserted_rows) AS inserted_count,
     (SELECT COUNT(*) FROM updated_rows) AS updated_count;
 """
 
@@ -515,16 +517,28 @@ def weekly_pricing_dump_update():
         connection.commit()
         total_saved += inserted
         logger.info("Inserted %d raw pricing data records", inserted)
-
-    # Upsert NormalizedPricingData
-    sql = _return_sql_string_to_execute()
+    
+    # 1. Only check updates if normalized table is not empty
     with connection.cursor() as cur:
-        cur.execute(sql)
-        inserted_count, updated_count = cur.fetchone()
+        cur.execute("SELECT EXISTS (SELECT 1 FROM normalized_pricing_data LIMIT 1);")
+        normalized_has_rows = cur.fetchone()[0]
+    
+    # 2. Insert new rows
+    with connection.cursor() as cur:
+        cur.execute(_return_sql_insert_normalized())
+        inserted_count = cur.fetchone()[0]
         connection.commit()
-        total_saved += inserted_count + updated_count
-        logger.info("Inserted %d normalized rows, updated %d rows", inserted_count, updated_count)
+        total_saved += inserted_count
+        logger.info("Inserted %d new normalized rows", inserted_count)
 
+    # 3. Update changed rows
+    if normalized_has_rows:
+        with connection.cursor() as cur:
+            cur.execute(_return_sql_check_updates_normalized())
+            updated_count = cur.fetchone()[0]
+            connection.commit()
+            total_saved += updated_count
+            logger.info("Updated %d normalized rows", updated_count)
 
     final_elapsed = time.time() - start_time
     logger.info("✓ SQL processing complete: %d records processed in %.1fs", total_saved, final_elapsed)
