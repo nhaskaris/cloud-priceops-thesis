@@ -100,6 +100,7 @@ class NormalizedPricingData(models.Model):
     vcpu_count = models.IntegerField(null=True, blank=True)
     memory_gb = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     storage_type = models.CharField(max_length=100, blank=True, null=True)
+    domain_label = models.CharField(max_length=100, blank=True, null=True)
 
     # Pricing values
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
@@ -118,21 +119,12 @@ class NormalizedPricingData(models.Model):
     class Meta:
         db_table = "normalized_pricing_data"
         # UNIQUE constraint for ON CONFLICT upserts
+
         indexes = [
             # Existing useful indexes
             models.Index(fields=['effective_date']),
             models.Index(fields=['is_active']),
             models.Index(fields=['price_per_unit'], name='idx_price_positive', condition=models.Q(price_per_unit__gt=0)),
-
-            # Composite index for price change detection
-            models.Index(
-                fields=[
-                    'provider', 'service', 'region', 'pricing_model', 'currency',
-                    'product_family', 'instance_type', 'operating_system',
-                    'tenancy', 'price_unit', 'price_per_unit'
-                ],
-                name='idx_npd_price_change_detection'
-            ),
 
             # Index for raw_entry joins
             models.Index(fields=['raw_entry'], name='idx_npd_raw_entry'),
@@ -206,13 +198,6 @@ class RawPricingData(models.Model):
         blank=True,
         null=True,
         help_text="Optional raw JSON payload for auditing/debugging"
-    )
-    normalized = models.ForeignKey(
-        'NormalizedPricingData',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='raw_entries'
     )
     source_api = models.CharField(
         max_length=100,

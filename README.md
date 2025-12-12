@@ -74,6 +74,11 @@
 - Download file locally if it doesnt exist so we dont spam call their api.
 - Normalized cpu & storage_type into our columns
 
+# 12.12
+- Added domain_label
+- Created a function to calculate domain_label sql
+- If the env is DEV it will only use 10k rows to be able to debug easier
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update

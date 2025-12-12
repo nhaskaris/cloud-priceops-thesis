@@ -34,14 +34,16 @@ WITH normalized_input AS (
         price_elem->>'unit' AS price_unit,
         COALESCE(price_elem->>'description', '') AS description,
         COALESCE(regexp_replace(price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
-
         NULLIF(regexp_replace(s.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
         CASE 
             WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%ssd%' THEN 'ssd'
             WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
             ELSE COALESCE(s.attributes::jsonb->>'storageType', '')
         END AS storage_type,
-
+        classify_domain(
+            s.service, 
+            s.attributes::jsonb->>'instanceType'
+        ) AS domain_label,
         s.producthash AS product_hash,
         NOW() AS created_at,
         NOW() AS updated_at,
@@ -64,7 +66,7 @@ inserted_rows AS (
         description, term_length_year,
         raw_entry_id,
         effective_date, is_active, source_api,
-        created_at, updated_at, vcpu_count, storage_type
+        created_at, updated_at, vcpu_count, storage_type, domain_label
     )
     SELECT
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
@@ -73,23 +75,9 @@ inserted_rows AS (
         n.description, n.term_length_year,
         r.id AS raw_entry_id,
         NOW(), TRUE, n.source_api,
-        n.created_at, n.updated_at, n.vcpu_count, n.storage_type
+        n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label
     FROM normalized_input n
     JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM normalized_pricing_data x
-        WHERE x.provider_id = n.provider_id
-          AND x.service_id = n.service_id
-          AND x.region_id = n.region_id
-          AND x.pricing_model_id = n.pricing_model_id
-          AND x.currency_id = n.currency_id
-          AND x.product_family = n.product_family
-          AND x.instance_type = n.instance_type
-          AND x.operating_system = n.operating_system
-          AND x.tenancy = n.tenancy
-          AND x.price_unit = n.price_unit
-    )
     RETURNING id
 )
 SELECT COUNT(*) AS inserted_count FROM inserted_rows;
@@ -277,51 +265,68 @@ def weekly_pricing_dump_update():
                 pass
             raise
 
+    import os
+
     def _create_and_load_staging(tmp_path):
         staging_table = "infracost_staging_prices"
+        max_rows = 10000 if os.getenv("DEV", "").lower() in ("1", "true", "yes") else None
+        total_rows = 0
+
         with connection.cursor() as cur:
             cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
             cur.execute(f"""
                 CREATE TABLE {staging_table} (
-                  productHash text,
-                  sku text,
-                  vendorName text,
-                  region text,
-                  service text,
-                  product_family text,
-                  attributes text,
-                  prices text
+                    productHash text,
+                    sku text,
+                    vendorName text,
+                    region text,
+                    service text,
+                    product_family text,
+                    attributes text,
+                    prices text
                 );
             """)
             connection.commit()
 
-            # Try psycopg2 COPY first, fall back to batch insert
-            try:
-                import psycopg2
+            # Always use batch insert in DEV
+            use_batch_insert = bool(max_rows)
+
+            if not use_batch_insert:
+                # PROD: try COPY first
+                try:
+                    import psycopg2
+                    with gzip.open(tmp_path, "rt") as gzfile:
+                        params = connection.get_connection_params()
+                        pg2_conn = psycopg2.connect(
+                            host=params.get('host', 'localhost'),
+                            database=params.get('dbname'),
+                            user=params.get('user'),
+                            password=params.get('password'),
+                            port=params.get('port', 5432)
+                        )
+                        pg2_cursor = pg2_conn.cursor()
+                        pg2_cursor.copy_expert(f"""
+                            COPY {staging_table}
+                            (productHash, sku, vendorName, region, service,
+                            product_family, attributes, prices)
+                            FROM STDIN WITH CSV HEADER
+                        """, gzfile)
+                        pg2_conn.commit()
+                        pg2_cursor.close()
+                        pg2_conn.close()
+                        # estimate total rows from file
+                        with gzip.open(tmp_path, "rt") as f:
+                            total_rows = sum(1 for _ in f) - 1  # minus header
+                except Exception as e:
+                    logger.warning("psycopg2 COPY failed, falling back to batch insert: %s", e)
+                    use_batch_insert = True
+
+            if use_batch_insert:
+                # DEV or fallback: batch insert with max_rows
                 with gzip.open(tmp_path, "rt") as gzfile:
-                    params = connection.get_connection_params()
-                    pg2_conn = psycopg2.connect(
-                        host=params.get('host', 'localhost'),
-                        database=params.get('dbname'),
-                        user=params.get('user'),
-                        password=params.get('password'),
-                        port=params.get('port', 5432)
-                    )
-                    pg2_cursor = pg2_conn.cursor()
-                    pg2_cursor.copy_expert(f"""
-                        COPY {staging_table}
-                        (productHash, sku, vendorName, region, service,
-                         product_family, attributes, prices)
-                        FROM STDIN WITH CSV HEADER
-                    """, gzfile)
-                    pg2_conn.commit()
-                    pg2_cursor.close()
-                    pg2_conn.close()
-            except Exception as e:
-                logger.warning("psycopg2 COPY failed, falling back to batch insert: %s", e)
-                with gzip.open(tmp_path, "rt") as gzfile:
+                    import csv
                     reader = csv.DictReader(gzfile)
-                    batch_size = 10000
+                    batch_size = 1000
                     rows_batch = []
                     for row in reader:
                         rows_batch.append((
@@ -334,24 +339,30 @@ def weekly_pricing_dump_update():
                             row.get('attributes'),
                             row.get('prices')
                         ))
+                        total_rows += 1
                         if len(rows_batch) >= batch_size:
                             cur.executemany(f"""
                                 INSERT INTO {staging_table}
                                 (productHash, sku, vendorName, region, service,
-                                 product_family, attributes, prices)
+                                product_family, attributes, prices)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             """, rows_batch)
                             connection.commit()
                             rows_batch.clear()
+
+                        if max_rows and total_rows >= max_rows:
+                            break
+
                     if rows_batch:
                         cur.executemany(f"""
                             INSERT INTO {staging_table}
                             (productHash, sku, vendorName, region, service,
-                             product_family, attributes, prices)
+                            product_family, attributes, prices)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """, rows_batch)
                         connection.commit()
-        logger.info("Staging load complete into %s", staging_table)
+
+        logger.info("Staging load complete into %s (loaded %d rows)", staging_table, total_rows)
         return staging_table
 
     # ---- orchestrate fetch/load ----
