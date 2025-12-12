@@ -40,6 +40,31 @@ WITH normalized_input AS (
             WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
             ELSE COALESCE(s.attributes::jsonb->>'storageType', '')
         END AS storage_type,
+        
+        -- START: Corrected logic for memory_gb calculation
+        (
+            CASE 
+                WHEN s.attributes::jsonb->>'memory' IS NULL OR s.attributes::jsonb->>'memory' = '' THEN NULL
+                
+                ELSE 
+                    -- *** NULLIF added here to convert empty string to NULL before casting ***
+                    (
+                        NULLIF(
+                            regexp_replace(s.attributes::jsonb->>'memory', '[^0-9\.]', '', 'g'), 
+                            ''
+                        )
+                    )::numeric 
+                    * CASE 
+                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%tib%' THEN 1024.0
+                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%kib%' THEN 1.0 / 1048576.0 
+                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%mib%' THEN 1.0 / 1024.0 
+                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%gib%' THEN 1.0
+                        ELSE 1.0
+                    END
+            END
+        ) AS memory_gb,
+        -- END: Corrected logic for memory_gb calculation
+
         classify_domain(
             s.service, 
             s.attributes::jsonb->>'instanceType'
@@ -66,7 +91,8 @@ inserted_rows AS (
         description, term_length_year,
         raw_entry_id,
         effective_date, is_active, source_api,
-        created_at, updated_at, vcpu_count, storage_type, domain_label
+        created_at, updated_at, vcpu_count, storage_type, domain_label,
+        memory_gb
     )
     SELECT
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
@@ -75,7 +101,8 @@ inserted_rows AS (
         n.description, n.term_length_year,
         r.id AS raw_entry_id,
         NOW(), TRUE, n.source_api,
-        n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label
+        n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label,
+        n.memory_gb
     FROM normalized_input n
     JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
     RETURNING id

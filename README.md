@@ -78,6 +78,7 @@
 - Added domain_label
 - Created a function to calculate domain_label sql
 - If the env is DEV it will only use 10k rows to be able to debug easier
+- Normalized memory into memory_gb column
 
 ### DOC
 ```docker exec -it priceops_celery_worker \
