@@ -19,10 +19,10 @@ INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
 
 def _return_sql_insert_normalized():
     return """
+-- CTE 1: Stage 1 data preparation
 WITH normalized_input_stage1 AS (
     SELECT
         s.*,
-        -- *** FIX: Include the price_elem JSON object so it can be accessed in the next CTE (normalized_input) ***
         price_elem,
         cp.id AS provider_id,
         cs.id AS service_id,
@@ -31,18 +31,20 @@ WITH normalized_input_stage1 AS (
         c.id AS currency_id,
         price_elem->>'USD' AS raw_price,
         price_elem->>'unit' AS price_unit_raw,
+        price_elem->>'termPurchaseOption' AS term_purchase_option,
+        price_elem->>'termLength' AS term_length_year, 
         
         -- 1. CALCULATE NORMALIZED UNIT
         CASE
             WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN 'Hour'
             WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN 'Month'
             WHEN LOWER(price_elem->>'unit') IN ('1 gb/month', '1 gb', 'gibibyte') THEN 'GB' 
-            WHEN price_elem->>'unit' IN ('1', '100', '1K', '10K', '1M', '1B', 'Quantity') THEN 'Unit'
+            WHEN price_elem->>'unit' IN ('1', '100', '1K', '10K', '1M', '1B', 'Quantity') THEN 'Unit' 
             WHEN LOWER(price_elem->>'unit') = '1/day' THEN 'Day'
             ELSE price_elem->>'unit' 
         END AS normalized_price_unit,
         
-        -- 2. PIVOT PRICE INTO TEMPORARY COLUMNS
+        -- 2. PIVOT PRICE INTO TEMPORARY COLUMNS (Used for non-term/non-quantity calculations)
         CASE WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_hour,
         CASE WHEN LOWER(price_elem->>'unit') = '1/day' THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_day,
         CASE WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_month,
@@ -68,6 +70,7 @@ WITH normalized_input_stage1 AS (
     JOIN cloud_pricing_currency c ON c.code = 'USD'
     WHERE (price_elem->>'USD') IS NOT NULL
 ),
+-- CTE 2: Final normalization and calculation of features
 normalized_input AS (
     SELECT
         s1.provider_id,
@@ -80,24 +83,73 @@ normalized_input AS (
         COALESCE(s1.attributes::jsonb->>'operatingSystem', '') AS operating_system,
         COALESCE(s1.attributes::jsonb->>'tenancy', '') AS tenancy,
         s1.raw_price::numeric AS price_per_unit,
-        s1.price_unit_raw AS price_unit,
-        
+
+        -- Clean up term_length to numeric years (e.g., '1yr' -> 1). 
+        -- FIX: Cast to NUMERIC (Decimal) and return NULL if not found, as the model allows NULL.
+        CASE 
+            WHEN s1.term_length_year LIKE '%yr%' 
+            THEN NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')::numeric
+            ELSE NULL 
+        END AS term_length_year_clean,
+
         -- 3. CALCULATE EFFECTIVE PRICE PER HOUR (Target Variable)
         (
         COALESCE(
             CASE 
+                -- 3A. AMORTIZE UPFRONT/QUANTITY FEES (Commitment Amortization)
+                -- Uses the raw term length extraction since it handles the NULLIF correctly before division.
+                WHEN s1.normalized_price_unit IN ('Unit', 'Quantity') 
+                     AND s1.term_purchase_option IS NOT NULL 
+                     AND s1.term_purchase_option != 'No Upfront' 
+                     AND (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')) IS NOT NULL 
+                THEN 
+                    (s1.raw_price::numeric) / 
+                    (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')::numeric * 8766.0) 
+                    
+                -- 3B. EXISTING LOGIC (Hourly, Daily, Monthly, GB)
                 WHEN s1.price_per_hour IS NOT NULL THEN s1.price_per_hour
                 WHEN s1.price_per_day IS NOT NULL  THEN s1.price_per_day / 24.0
                 WHEN s1.price_per_month IS NOT NULL THEN s1.price_per_month / 730.0
                 WHEN s1.normalized_price_unit = 'GB' AND s1.price_per_gb IS NOT NULL THEN s1.price_per_gb / 730.0 
-                ELSE 0.0
+                
+                ELSE 0.0 
             END, 
             0.0
         )) AS effective_price_per_hour,
+
+        -- 4. CONDITIONAL PRICE UNIT SELECTION
+        CASE
+            WHEN 
+                COALESCE(
+                    CASE 
+                        -- Check for Amortization case
+                        WHEN s1.normalized_price_unit IN ('Unit', 'Quantity') 
+                             AND s1.term_purchase_option IS NOT NULL
+                             AND s1.term_purchase_option != 'No Upfront'
+                             AND (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')) IS NOT NULL 
+                        THEN 1.0 
+                        
+                        -- Check for Standard Hourly/Daily/Monthly cases
+                        WHEN s1.price_per_hour IS NOT NULL THEN 1.0
+                        WHEN s1.price_per_day IS NOT NULL  THEN 1.0
+                        WHEN s1.price_per_month IS NOT NULL THEN 1.0
+                        WHEN s1.normalized_price_unit = 'GB' AND s1.price_per_gb IS NOT NULL THEN 1.0 
+                        
+                        ELSE 0.0
+                    END, 
+                    0.0
+                ) = 0.0 
+            THEN s1.price_unit_raw 
+            ELSE NULL
+        END AS price_unit,
+
+        -- 5. COMMITMENT FLAGS (Fixed to return FALSE if term_purchase_option is NULL)
+        COALESCE(s1.term_purchase_option = 'All Upfront', FALSE) AS is_all_upfront,
+        COALESCE(s1.term_purchase_option = 'Partial Upfront', FALSE) AS is_partial_upfront,
+        COALESCE(s1.term_purchase_option = 'No Upfront', FALSE) AS is_no_upfront,
         
-        -- References fixed here: s1.price_elem is now available
         COALESCE(s1.price_elem->>'description', '') AS description,
-        COALESCE(regexp_replace(s1.price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
+        COALESCE(s1.term_length_year, '') AS term_length_year_raw,
         
         NULLIF(regexp_replace(s1.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
         CASE 
@@ -106,7 +158,7 @@ normalized_input AS (
             ELSE COALESCE(s1.attributes::jsonb->>'storageType', '')
         END AS storage_type,
         
-        -- memory_gb calculation (using s1.attributes)
+        -- memory_gb calculation
         (
             CASE 
                 WHEN s1.attributes::jsonb->>'memory' IS NULL OR s1.attributes::jsonb->>'memory' = '' THEN NULL
@@ -138,28 +190,40 @@ normalized_input AS (
         'infracost' AS source_api
     FROM normalized_input_stage1 s1
 ),
+-- CTE 3: Final INSERT statement
 inserted_rows AS (
     INSERT INTO normalized_pricing_data (
         provider_id, service_id, region_id, pricing_model_id, currency_id,
         product_family, instance_type, operating_system, tenancy,
         price_per_unit, price_unit,
-        description, term_length_year,
+        description, term_length_years, -- Note: Changed column name to match model update
         raw_entry_id,
         effective_date, is_active, source_api,
         created_at, updated_at, vcpu_count, storage_type, domain_label,
         memory_gb,
-        effective_price_per_hour
+        effective_price_per_hour,
+        
+        -- NEW COLUMNS MAPPING
+        is_all_upfront,
+        is_partial_upfront,
+        is_no_upfront
     )
     SELECT
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
         n.product_family, n.instance_type, n.operating_system, n.tenancy,
         n.price_per_unit, n.price_unit,
-        n.description, n.term_length_year,
+        n.description, n.term_length_year_clean, -- Now correctly inserts NULL (if not found) or a Decimal
         r.id AS raw_entry_id,
         NOW(), TRUE, n.source_api,
         n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label,
         n.memory_gb,
-        n.effective_price_per_hour
+        n.effective_price_per_hour,
+        
+        -- NEW COLUMNS SELECTION
+        n.is_all_upfront,
+        n.is_partial_upfront,
+        n.is_no_upfront
+        
     FROM normalized_input n
     JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
     RETURNING id
@@ -637,12 +701,6 @@ def weekly_pricing_dump_update():
 
     final_elapsed = time.time() - start_time
     logger.info("✓ SQL processing complete: %d records processed in %.1fs", total_saved, final_elapsed)
-
-    # cleanup
-    try:
-        os.remove(tmp_path)
-    except OSError:
-        logger.warning("Could not delete %s", tmp_path)
 
     # APICallLog(s)
     try:

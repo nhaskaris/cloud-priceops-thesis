@@ -95,7 +95,7 @@ class NormalizedPricingData(models.Model):
     instance_type = models.CharField(max_length=100, blank=True)
     operating_system = models.CharField(max_length=100, blank=True)
     tenancy = models.CharField(max_length=50, blank=True)
-    term_length_year = models.CharField(max_length=50, blank=True)
+    term_length_years = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     description = models.TextField(blank=True)
     vcpu_count = models.IntegerField(null=True, blank=True)
     memory_gb = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -104,8 +104,17 @@ class NormalizedPricingData(models.Model):
 
     # Pricing values
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    price_unit = models.CharField(max_length=100, blank=True)
+    price_unit = models.CharField(max_length=100, blank=True, null=True)
     effective_price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    is_all_upfront = models.BooleanField(
+        default=False,
+    )
+    is_partial_upfront = models.BooleanField(
+        default=False,
+    )
+    is_no_upfront = models.BooleanField(
+        default=False,
+    )
 
     raw_entry = models.ForeignKey('RawPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='canonical_normalized')
 

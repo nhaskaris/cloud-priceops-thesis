@@ -81,6 +81,11 @@
 - Normalized memory into memory_gb column
 - Normalized price_unit into effective_price_per_hour
 
+# 13.12
+- 1.828.73 rows have in price_unit hrs with price 0 which means we can ignore these rows and their price_unit because it is for offers
+- The quantity price_unit means that you buy the whole thing for the term_length_year (it is always non null). That way we can normalize the price to per hour and also keep the columns that show if its reserved, partial, non-partial. That means we can use our pricing-model column to show that they fall under the category reserved etc. And create a new column if its upfront the cost from the description
+- By reading `termPurchaseOption` field from prices we can check if its partial, upfront, or none and we insert into 3 boolean columns
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
