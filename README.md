@@ -79,6 +79,7 @@
 - Created a function to calculate domain_label sql
 - If the env is DEV it will only use 10k rows to be able to debug easier
 - Normalized memory into memory_gb column
+- Normalized price_unit into effective_price_per_hour
 
 ### DOC
 ```docker exec -it priceops_celery_worker \

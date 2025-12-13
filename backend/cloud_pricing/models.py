@@ -105,6 +105,7 @@ class NormalizedPricingData(models.Model):
     # Pricing values
     price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     price_unit = models.CharField(max_length=100, blank=True)
+    effective_price_per_hour = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
 
     raw_entry = models.ForeignKey('RawPricingData', on_delete=models.SET_NULL, null=True, blank=True, related_name='canonical_normalized')
 

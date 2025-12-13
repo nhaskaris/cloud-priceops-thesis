@@ -19,60 +19,45 @@ INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
 
 def _return_sql_insert_normalized():
     return """
-WITH normalized_input AS (
+WITH normalized_input_stage1 AS (
     SELECT
+        s.*,
+        -- *** FIX: Include the price_elem JSON object so it can be accessed in the next CTE (normalized_input) ***
+        price_elem,
         cp.id AS provider_id,
         cs.id AS service_id,
         cr.id AS region_id,
         pm.id AS pricing_model_id,
         c.id AS currency_id,
-        COALESCE(s.attributes::jsonb->>'instanceFamily', '') AS product_family,
-        COALESCE(s.attributes::jsonb->>'instanceType', '') AS instance_type,
-        COALESCE(s.attributes::jsonb->>'operatingSystem', '') AS operating_system,
-        COALESCE(s.attributes::jsonb->>'tenancy', '') AS tenancy,
-        (price_elem->>'USD')::numeric AS price_per_unit,
-        price_elem->>'unit' AS price_unit,
-        COALESCE(price_elem->>'description', '') AS description,
-        COALESCE(regexp_replace(price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
-        NULLIF(regexp_replace(s.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
-        CASE 
-            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%ssd%' THEN 'ssd'
-            WHEN LOWER(COALESCE(s.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
-            ELSE COALESCE(s.attributes::jsonb->>'storageType', '')
-        END AS storage_type,
+        price_elem->>'USD' AS raw_price,
+        price_elem->>'unit' AS price_unit_raw,
         
-        -- START: Corrected logic for memory_gb calculation
-        (
-            CASE 
-                WHEN s.attributes::jsonb->>'memory' IS NULL OR s.attributes::jsonb->>'memory' = '' THEN NULL
-                
-                ELSE 
-                    -- *** NULLIF added here to convert empty string to NULL before casting ***
-                    (
-                        NULLIF(
-                            regexp_replace(s.attributes::jsonb->>'memory', '[^0-9\.]', '', 'g'), 
-                            ''
-                        )
-                    )::numeric 
-                    * CASE 
-                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%tib%' THEN 1024.0
-                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%kib%' THEN 1.0 / 1048576.0 
-                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%mib%' THEN 1.0 / 1024.0 
-                        WHEN LOWER(s.attributes::jsonb->>'memory') LIKE '%gib%' THEN 1.0
-                        ELSE 1.0
-                    END
-            END
-        ) AS memory_gb,
-        -- END: Corrected logic for memory_gb calculation
+        -- 1. CALCULATE NORMALIZED UNIT
+        CASE
+            WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN 'Hour'
+            WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN 'Month'
+            WHEN LOWER(price_elem->>'unit') IN ('1 gb/month', '1 gb', 'gibibyte') THEN 'GB' 
+            WHEN price_elem->>'unit' IN ('1', '100', '1K', '10K', '1M', '1B', 'Quantity') THEN 'Unit'
+            WHEN LOWER(price_elem->>'unit') = '1/day' THEN 'Day'
+            ELSE price_elem->>'unit' 
+        END AS normalized_price_unit,
+        
+        -- 2. PIVOT PRICE INTO TEMPORARY COLUMNS
+        CASE WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_hour,
+        CASE WHEN LOWER(price_elem->>'unit') = '1/day' THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_day,
+        CASE WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_month,
+        CASE WHEN LOWER(price_elem->>'unit') IN ('1 gb/month', '1 gb', 'gibibyte') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_gb,
+        
+        -- Price per Unit Count (Normalized to price per 1 unit)
+        CASE
+            WHEN price_elem->>'unit' = 'Quantity' OR price_elem->>'unit' IN ('1', '100') THEN (price_elem->>'USD')::numeric
+            WHEN price_elem->>'unit' = '1K' THEN (price_elem->>'USD')::numeric / 1000.0
+            WHEN price_elem->>'unit' = '10K' THEN (price_elem->>'USD')::numeric / 10000.0
+            WHEN price_elem->>'unit' = '1M' THEN (price_elem->>'USD')::numeric / 1000000.0
+            WHEN price_elem->>'unit' = '1B' THEN (price_elem->>'USD')::numeric / 1000000000.0
+            ELSE NULL
+        END AS price_per_unit_count
 
-        classify_domain(
-            s.service, 
-            s.attributes::jsonb->>'instanceType'
-        ) AS domain_label,
-        s.producthash AS product_hash,
-        NOW() AS created_at,
-        NOW() AS updated_at,
-        'infracost' AS source_api
     FROM infracost_staging_prices s
     CROSS JOIN LATERAL jsonb_each(s.prices::jsonb) AS top_level(key, value)
     CROSS JOIN LATERAL jsonb_array_elements(value) AS price_elem
@@ -83,6 +68,76 @@ WITH normalized_input AS (
     JOIN cloud_pricing_currency c ON c.code = 'USD'
     WHERE (price_elem->>'USD') IS NOT NULL
 ),
+normalized_input AS (
+    SELECT
+        s1.provider_id,
+        s1.service_id,
+        s1.region_id,
+        s1.pricing_model_id,
+        s1.currency_id,
+        COALESCE(s1.attributes::jsonb->>'instanceFamily', '') AS product_family,
+        COALESCE(s1.attributes::jsonb->>'instanceType', '') AS instance_type,
+        COALESCE(s1.attributes::jsonb->>'operatingSystem', '') AS operating_system,
+        COALESCE(s1.attributes::jsonb->>'tenancy', '') AS tenancy,
+        s1.raw_price::numeric AS price_per_unit,
+        s1.price_unit_raw AS price_unit,
+        
+        -- 3. CALCULATE EFFECTIVE PRICE PER HOUR (Target Variable)
+        (
+        COALESCE(
+            CASE 
+                WHEN s1.price_per_hour IS NOT NULL THEN s1.price_per_hour
+                WHEN s1.price_per_day IS NOT NULL  THEN s1.price_per_day / 24.0
+                WHEN s1.price_per_month IS NOT NULL THEN s1.price_per_month / 730.0
+                WHEN s1.normalized_price_unit = 'GB' AND s1.price_per_gb IS NOT NULL THEN s1.price_per_gb / 730.0 
+                ELSE 0.0
+            END, 
+            0.0
+        )) AS effective_price_per_hour,
+        
+        -- References fixed here: s1.price_elem is now available
+        COALESCE(s1.price_elem->>'description', '') AS description,
+        COALESCE(regexp_replace(s1.price_elem->>'termLength', '\D', '', 'g'), '') AS term_length_year,
+        
+        NULLIF(regexp_replace(s1.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
+        CASE 
+            WHEN LOWER(COALESCE(s1.attributes::jsonb->>'storageType', '')) LIKE '%ssd%' THEN 'ssd'
+            WHEN LOWER(COALESCE(s1.attributes::jsonb->>'storageType', '')) LIKE '%hdd%' THEN 'hdd'
+            ELSE COALESCE(s1.attributes::jsonb->>'storageType', '')
+        END AS storage_type,
+        
+        -- memory_gb calculation (using s1.attributes)
+        (
+            CASE 
+                WHEN s1.attributes::jsonb->>'memory' IS NULL OR s1.attributes::jsonb->>'memory' = '' THEN NULL
+                
+                ELSE 
+                    (
+                        NULLIF(
+                            regexp_replace(s1.attributes::jsonb->>'memory', '[^0-9\.]', '', 'g'), 
+                            ''
+                        )
+                    )::numeric 
+                    * CASE 
+                        WHEN LOWER(s1.attributes::jsonb->>'memory') LIKE '%tib%' THEN 1024.0
+                        WHEN LOWER(s1.attributes::jsonb->>'memory') LIKE '%kib%' THEN 1.0 / 1048576.0 
+                        WHEN LOWER(s1.attributes::jsonb->>'memory') LIKE '%mib%' THEN 1.0 / 1024.0 
+                        WHEN LOWER(s1.attributes::jsonb->>'memory') LIKE '%gib%' THEN 1.0
+                        ELSE 1.0
+                    END
+            END
+        ) AS memory_gb,
+        
+        classify_domain(
+            s1.service, 
+            s1.attributes::jsonb->>'instanceType'
+        ) AS domain_label,
+        s1.producthash AS product_hash,
+        NOW() AS created_at,
+        NOW() AS updated_at,
+        'infracost' AS source_api
+    FROM normalized_input_stage1 s1
+),
 inserted_rows AS (
     INSERT INTO normalized_pricing_data (
         provider_id, service_id, region_id, pricing_model_id, currency_id,
@@ -92,7 +147,8 @@ inserted_rows AS (
         raw_entry_id,
         effective_date, is_active, source_api,
         created_at, updated_at, vcpu_count, storage_type, domain_label,
-        memory_gb
+        memory_gb,
+        effective_price_per_hour
     )
     SELECT
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
@@ -102,7 +158,8 @@ inserted_rows AS (
         r.id AS raw_entry_id,
         NOW(), TRUE, n.source_api,
         n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label,
-        n.memory_gb
+        n.memory_gb,
+        n.effective_price_per_hour
     FROM normalized_input n
     JOIN cloud_pricing_rawpricingdata r ON r.product_hash = n.product_hash
     RETURNING id
