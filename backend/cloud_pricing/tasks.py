@@ -18,7 +18,7 @@ DATA_DOWNLOAD_URL = "https://pricing.api.infracost.io/data-download/latest"
 INFRACOST_API_KEY = os.getenv("INFRACOST_API_KEY")
 
 def _return_sql_insert_normalized():
-    return """
+    return f"""
 -- CTE 1: Stage 1 data preparation
 WITH normalized_input_stage1 AS (
     SELECT
@@ -27,14 +27,41 @@ WITH normalized_input_stage1 AS (
         cp.id AS provider_id,
         cs.id AS service_id,
         cr.id AS region_id,
-        pm.id AS pricing_model_id,
         c.id AS currency_id,
         price_elem->>'USD' AS raw_price,
         price_elem->>'unit' AS price_unit_raw,
         price_elem->>'termPurchaseOption' AS term_purchase_option,
-        price_elem->>'termLength' AS term_length_year, 
         
-        -- 1. CALCULATE NORMALIZED UNIT
+        -- The raw term length field
+        price_elem->>'termLength' AS term_length_year_raw, 
+
+        -- 1a. UNIFIED TERM EXTRACTION: Prioritize termLength, then purchaseOption/Pricing Model name
+        CASE
+            -- 1. Use termLength field if present and not empty (e.g., '3yr')
+            WHEN price_elem->>'termLength' IS NOT NULL AND price_elem->>'termLength' != '' 
+                THEN price_elem->>'termLength'
+            -- 2. Extract from purchaseOption/Pricing Model name (e.g., 'Commit3Yr' -> '3yr')
+            WHEN price_elem->>'purchaseOption' LIKE 'Commit%Yr' THEN 
+                regexp_replace(price_elem->>'purchaseOption', '[^0-9\.]', '', 'g') || 'yr'
+            WHEN price_elem->>'purchaseOption' LIKE 'Commit%Mo' THEN 
+                regexp_replace(price_elem->>'purchaseOption', '[^0-9\.]', '', 'g') || 'mo'
+            ELSE NULL -- Default to NULL if no term info is found
+        END AS extracted_term_length,
+
+        -- 1b. CLASSIFY the FINAL PRICING MODEL ID 
+        -- If a term was extracted, set model ID to NULL. Otherwise, use the ID from the (now LEFT) joined table.
+        CASE
+            -- If a term was extracted, set model ID to NULL
+            WHEN 
+                price_elem->>'termLength' IS NOT NULL AND price_elem->>'termLength' != '' OR
+                price_elem->>'purchaseOption' LIKE 'Commit%Yr' OR 
+                price_elem->>'purchaseOption' LIKE 'Commit%Mo'
+                THEN NULL 
+            -- Otherwise, use the ID derived from the pm table (which will be NULL if the LEFT JOIN failed)
+            ELSE pm.id 
+        END AS pricing_model_id,
+        
+        -- 2. CALCULATE NORMALIZED UNIT (rest of stage 1 remains the same)
         CASE
             WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN 'Hour'
             WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN 'Month'
@@ -44,13 +71,13 @@ WITH normalized_input_stage1 AS (
             ELSE price_elem->>'unit' 
         END AS normalized_price_unit,
         
-        -- 2. PIVOT PRICE INTO TEMPORARY COLUMNS (Used for non-term/non-quantity calculations)
+        -- 3. PIVOT PRICE INTO TEMPORARY COLUMNS
         CASE WHEN LOWER(price_elem->>'unit') IN ('hrs', 'hours', 'hour', '1 hour', '1/hour', 'gibibyte/hour') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_hour,
         CASE WHEN LOWER(price_elem->>'unit') = '1/day' THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_day,
         CASE WHEN LOWER(price_elem->>'unit') IN ('month', '1/month', 'user-month', 'gibibyte month') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_month,
         CASE WHEN LOWER(price_elem->>'unit') IN ('1 gb/month', '1 gb', 'gibibyte') THEN (price_elem->>'USD')::numeric ELSE NULL END AS price_per_gb,
         
-        -- Price per Unit Count (Normalized to price per 1 unit)
+        -- Price per Unit Count
         CASE
             WHEN price_elem->>'unit' = 'Quantity' OR price_elem->>'unit' IN ('1', '100') THEN (price_elem->>'USD')::numeric
             WHEN price_elem->>'unit' = '1K' THEN (price_elem->>'USD')::numeric / 1000.0
@@ -66,7 +93,10 @@ WITH normalized_input_stage1 AS (
     JOIN cloud_pricing_cloudprovider cp ON cp.name = LOWER(s.vendorname)
     JOIN cloud_pricing_cloudservice cs ON cs.provider_id = cp.id AND cs.name = s.service
     JOIN cloud_pricing_region cr ON cr.provider_id = cp.id AND cr.name = s.region
-    JOIN cloud_pricing_pricingmodel pm ON pm.name = COALESCE(price_elem->>'purchaseOption', 'on_demand')
+    
+    -- *** FIX APPLIED HERE: Changed from INNER JOIN to LEFT JOIN ***
+    LEFT JOIN cloud_pricing_pricingmodel pm ON pm.name = COALESCE(price_elem->>'purchaseOption', 'on_demand')
+    
     JOIN cloud_pricing_currency c ON c.code = 'USD'
     WHERE (price_elem->>'USD') IS NOT NULL
 ),
@@ -76,7 +106,7 @@ normalized_input AS (
         s1.provider_id,
         s1.service_id,
         s1.region_id,
-        s1.pricing_model_id,
+        s1.pricing_model_id, -- Now correctly NULL for skipped models, or populated for joined models
         s1.currency_id,
         COALESCE(s1.attributes::jsonb->>'instanceFamily', '') AS product_family,
         COALESCE(s1.attributes::jsonb->>'instanceType', '') AS instance_type,
@@ -84,27 +114,45 @@ normalized_input AS (
         COALESCE(s1.attributes::jsonb->>'tenancy', '') AS tenancy,
         s1.raw_price::numeric AS price_per_unit,
 
-        -- Clean up term_length to numeric years (e.g., '1yr' -> 1). 
-        -- FIX: Cast to NUMERIC (Decimal) and return NULL if not found, as the model allows NULL.
+        -- FINAL TERM LENGTH CLEANUP: Numeric years (Decimal) from extracted_term_length
         CASE 
-            WHEN s1.term_length_year LIKE '%yr%' 
-            THEN NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')::numeric
+            -- Check for year-based terms ('1yr', '3yr', etc.)
+            WHEN s1.extracted_term_length LIKE '%yr%' 
+            THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric
+            
+            -- Check for month-based terms ('1mo', etc.) and convert to years by dividing by 12.0
+            WHEN s1.extracted_term_length LIKE '%mo%' 
+            THEN 
+                NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric / 12.0
             ELSE NULL 
         END AS term_length_year_clean,
 
-        -- 3. CALCULATE EFFECTIVE PRICE PER HOUR (Target Variable)
+        -- 3. CALCULATE EFFECTIVE PRICE PER HOUR (Target Variable) (Logic unchanged)
         (
         COALESCE(
             CASE 
-                -- 3A. AMORTIZE UPFRONT/QUANTITY FEES (Commitment Amortization)
-                -- Uses the raw term length extraction since it handles the NULLIF correctly before division.
+                -- 3A. AMORTIZE UPFRONT/QUANTITY FEES 
                 WHEN s1.normalized_price_unit IN ('Unit', 'Quantity') 
                      AND s1.term_purchase_option IS NOT NULL 
                      AND s1.term_purchase_option != 'No Upfront' 
-                     AND (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')) IS NOT NULL 
+                     AND (
+                            CASE
+                                WHEN s1.extracted_term_length LIKE '%yr%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric
+                                WHEN s1.extracted_term_length LIKE '%mo%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric / 12.0
+                                ELSE NULL 
+                            END
+                         ) IS NOT NULL
                 THEN 
                     (s1.raw_price::numeric) / 
-                    (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')::numeric * 8766.0) 
+                    (
+                        (
+                            CASE
+                                WHEN s1.extracted_term_length LIKE '%yr%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric
+                                WHEN s1.extracted_term_length LIKE '%mo%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric / 12.0
+                                ELSE NULL 
+                            END
+                        ) * 8766.0
+                    ) 
                     
                 -- 3B. EXISTING LOGIC (Hourly, Daily, Monthly, GB)
                 WHEN s1.price_per_hour IS NOT NULL THEN s1.price_per_hour
@@ -117,16 +165,22 @@ normalized_input AS (
             0.0
         )) AS effective_price_per_hour,
 
-        -- 4. CONDITIONAL PRICE UNIT SELECTION
+        -- 4. CONDITIONAL PRICE UNIT SELECTION (Logic unchanged)
         CASE
             WHEN 
                 COALESCE(
                     CASE 
-                        -- Check for Amortization case
+                        -- Check for Amortization case 
                         WHEN s1.normalized_price_unit IN ('Unit', 'Quantity') 
                              AND s1.term_purchase_option IS NOT NULL
                              AND s1.term_purchase_option != 'No Upfront'
-                             AND (NULLIF(regexp_replace(s1.term_length_year, '\D', '', 'g'), '')) IS NOT NULL 
+                             AND (
+                                    CASE
+                                        WHEN s1.extracted_term_length LIKE '%yr%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric
+                                        WHEN s1.extracted_term_length LIKE '%mo%' THEN NULLIF(regexp_replace(s1.extracted_term_length, '\D', '', 'g'), '')::numeric / 12.0
+                                        ELSE NULL 
+                                    END
+                                 ) IS NOT NULL 
                         THEN 1.0 
                         
                         -- Check for Standard Hourly/Daily/Monthly cases
@@ -143,13 +197,13 @@ normalized_input AS (
             ELSE NULL
         END AS price_unit,
 
-        -- 5. COMMITMENT FLAGS (Fixed to return FALSE if term_purchase_option is NULL)
+        -- 5. COMMITMENT FLAGS (Logic unchanged)
         COALESCE(s1.term_purchase_option = 'All Upfront', FALSE) AS is_all_upfront,
         COALESCE(s1.term_purchase_option = 'Partial Upfront', FALSE) AS is_partial_upfront,
         COALESCE(s1.term_purchase_option = 'No Upfront', FALSE) AS is_no_upfront,
         
         COALESCE(s1.price_elem->>'description', '') AS description,
-        COALESCE(s1.term_length_year, '') AS term_length_year_raw,
+        COALESCE(s1.term_length_year_raw, '') AS term_length_year_raw,
         
         NULLIF(regexp_replace(s1.attributes::jsonb->>'vcpu', '[^0-9]', '', 'g'), '')::integer AS vcpu_count,
         CASE 
@@ -190,13 +244,13 @@ normalized_input AS (
         'infracost' AS source_api
     FROM normalized_input_stage1 s1
 ),
--- CTE 3: Final INSERT statement
+-- CTE 3: Final INSERT statement (Unchanged)
 inserted_rows AS (
     INSERT INTO normalized_pricing_data (
         provider_id, service_id, region_id, pricing_model_id, currency_id,
         product_family, instance_type, operating_system, tenancy,
         price_per_unit, price_unit,
-        description, term_length_years, -- Note: Changed column name to match model update
+        description, term_length_years,
         raw_entry_id,
         effective_date, is_active, source_api,
         created_at, updated_at, vcpu_count, storage_type, domain_label,
@@ -212,7 +266,7 @@ inserted_rows AS (
         n.provider_id, n.service_id, n.region_id, n.pricing_model_id, n.currency_id,
         n.product_family, n.instance_type, n.operating_system, n.tenancy,
         n.price_per_unit, n.price_unit,
-        n.description, n.term_length_year_clean, -- Now correctly inserts NULL (if not found) or a Decimal
+        n.description, n.term_length_year_clean,
         r.id AS raw_entry_id,
         NOW(), TRUE, n.source_api,
         n.created_at, n.updated_at, n.vcpu_count, n.storage_type, n.domain_label,
@@ -648,18 +702,44 @@ def weekly_pricing_dump_update():
         connection.commit()
         logger.info("Inserted %d region records", inserted)
 
-    # Insert Pricing Model
     with connection.cursor() as cur:
         sql = f"""
             INSERT INTO cloud_pricing_pricingmodel (name)
             SELECT DISTINCT
-                COALESCE(elem->>'purchaseOption', 'on_demand')
+                -- 1. Normalize the name for insertion
+                CASE
+                    -- Normalize all forms of Spot/Low Priority pricing
+                    WHEN LOWER(COALESCE(elem->>'purchaseOption', '')) IN ('spot', 'low priority', 'preemptible', 'cmt cud premium', 'reserved') 
+                         OR LOWER(COALESCE(elem->>'purchaseOption', '')) LIKE '%spot%'
+                         OR LOWER(COALESCE(elem->>'purchaseOption', '')) LIKE '%low priority%'
+                         THEN 'Spot'
+                    
+                    -- Normalize all forms of On-Demand/Consumption pricing
+                    WHEN LOWER(COALESCE(elem->>'purchaseOption', '')) IN ('consumption', 'devtestconsumption', 'on_demand')
+                         OR LOWER(COALESCE(elem->>'purchaseOption', '')) LIKE '%ondemand%'
+                         THEN 'OnDemand'
+
+                    -- If it's a known non-standard term, keep the original (or use 'Reserved' if needed)
+                    WHEN LOWER(COALESCE(elem->>'purchaseOption', '')) = 'reservation' THEN 'Reserved'
+                    WHEN LOWER(COALESCE(elem->>'purchaseOption', '')) = 'preemptible' THEN 'Preemptible'
+
+                    -- Default to OnDemand for anything not explicitly handled, 
+                    -- which should be rare if the filters below work.
+                    ELSE COALESCE(elem->>'purchaseOption', 'OnDemand')
+                END AS normalized_name
             FROM (
                 SELECT json_array_elements(value)::json AS elem
                 FROM {staging_table},
                     json_each(prices::json) AS t(key, value)
             ) sub
-            WHERE COALESCE(elem->>'purchaseOption', '') <> ''
+            WHERE 
+                COALESCE(elem->>'purchaseOption', '') <> ''
+                -- 2. FILTER OUT: Skip inserting specific commitment terms
+                AND LOWER(COALESCE(elem->>'purchaseOption', '')) NOT LIKE '%commit%yr%'
+                AND LOWER(COALESCE(elem->>'purchaseOption', '')) NOT LIKE '%commit%mo%'
+                AND LOWER(COALESCE(elem->>'purchaseOption', '')) NOT LIKE '%reservation%' -- Also filter generic Reservation model names
+                AND LOWER(COALESCE(elem->>'purchaseOption', '')) NOT LIKE '%reserved%'
+            
             ON CONFLICT (name) DO NOTHING;
         """
 

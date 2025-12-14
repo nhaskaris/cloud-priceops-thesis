@@ -87,7 +87,7 @@ class NormalizedPricingData(models.Model):
     provider = models.ForeignKey(CloudProvider, on_delete=models.CASCADE)
     service = models.ForeignKey(CloudService, on_delete=models.CASCADE)
     region = models.ForeignKey(Region, on_delete=models.CASCADE)
-    pricing_model = models.ForeignKey(PricingModel, on_delete=models.CASCADE)
+    pricing_model = models.ForeignKey(PricingModel, on_delete=models.CASCADE, null=True, blank=True)
     currency = models.ForeignKey(Currency, on_delete=models.CASCADE)
 
     # Product details
