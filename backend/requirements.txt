@@ -2,6 +2,7 @@
 Django
 djangorestframework
 django-cors-headers
+django-filter
 python-dotenv
 whitenoise
 drf-spectacular

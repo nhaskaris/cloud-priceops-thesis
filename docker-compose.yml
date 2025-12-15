@@ -9,7 +9,7 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
-      - ./.env               # Root env for DB credentials
+      - ./.env            
     depends_on:
       - db
       - redis
@@ -22,7 +22,7 @@ services:
     container_name: priceops_postgres_db
     restart: always
     env_file:
-      - ./.env               # Root env for DB credentials
+      - ./.env            
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -69,7 +69,7 @@ services:
       sh -c "celery -A core beat --loglevel=info"
     env_file:
       - ./backend/.env
-      - ./.env               # Root env for DB credentials
+      - ./.env            
     depends_on:
       - redis
       - db
@@ -92,7 +92,7 @@ services:
       - "5555:5555"
     env_file:
       - ./backend/.env
-      - ./.env               # Root env for DB credentials
+      - ./.env            
     environment:
       - FLOWER_USER=${FLOWER_USER}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD}

@@ -87,6 +87,9 @@
 - By reading `termPurchaseOption` field from prices we can check if its partial, upfront, or none and we insert into 3 boolean columns
 - We normalize the pricing_model. Any CommitXm/y will be turned into column term_length_years. Also pricing model that are similar scoped but different named by different providers are grouped into one. Rest are keeped as is.
 
+# 15.12
+- Created an endpoint for models to retrieve data for their training/feature creation.
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
