@@ -19,6 +19,10 @@ from datetime import datetime
 from celery import shared_task
 from django.db import connection
 
+from .api.serializers import PricingDataSerializer 
+
+# Import the base DRF serializers module for type checking
+from rest_framework import serializers
 logger = logging.getLogger(__name__)
 
 DATA_DOWNLOAD_URL = "https://pricing.api.infracost.io/data-download/latest"
@@ -814,7 +818,8 @@ def weekly_pricing_dump_update():
 @shared_task(bind=True)
 def export_pricing_data_to_csv(self, filters):
     """
-    Queries the database based on client filters, generates a CSV, and saves it.
+    Queries the database based on client filters, generates a CSV, and saves it,
+    using the fields defined in PricingDataSerializer.
     """
     logger.info(f"Starting CSV export task {self.request.id} with filters: {filters}")
     
@@ -824,26 +829,52 @@ def export_pricing_data_to_csv(self, filters):
     # Apply Filters (Example handling for 'domain_label' from query params)
     domain_label_list = filters.get('domain_label')
     if domain_label_list:
-        # Since request.query_params returns a list for each key, take the first item
         queryset = queryset.filter(domain_label=domain_label_list[0]) 
 
-    # 1. Define Fields and Headers (ensure fields match model/related fields)
-    fields_to_export = [
-        'provider__name', 'service__name', 'region__name', 
-        'vcpu_count', 'memory_gb', 'effective_price_per_hour', 
-        'term_length_years', 'is_all_upfront', 'domain_label'
-    ]
-    headers = [f.replace('__name', '').replace('_', ' ').title() for f in fields_to_export]
+    # --- START REFACTORED SECTION ---
     
-    # 2. Get data efficiently (use .values_list for speed in tasks)
+    # 1. Define Fields and Headers using the Serializer
+    
+    # Instantiate the serializer (it doesn't need data, just field definitions)
+    serializer_instance = PricingDataSerializer()
+    
+    # Get the field names that should be exported (all fields from the serializer)
+    # Note: This will include fields like 'provider' which might map to 'provider__name'
+    # if they are StringRelatedFields pointing to a related model's __str__ method.
+    fields_to_export = []
+    headers = []
+    
+    # The serializer fields are an OrderedDict, preserving the desired CSV column order
+    for field_name, field_object in serializer_instance.fields.items():
+        # Get the actual database lookup path (e.g., 'provider' -> 'provider__name')
+        # Simple ModelFields: field_name
+        # StringRelatedFields: field_name + '__name' (or whatever the lookup is)
+        
+        db_lookup = field_name
+        
+        # Adjust the lookup for StringRelatedField. 
+        # Assuming StringRelatedField uses the related object's __str__, 
+        # which often translates to a 'name' lookup in .values_list().
+        # This part requires knowledge of your model/related field setup.
+        if isinstance(field_object, serializers.StringRelatedField):
+            db_lookup = f'{field_name}__name' # Standard pattern for related fields in values_list
+        
+        # Skip fields that don't map cleanly to a database column (e.g., SerializerMethodField)
+        # Add a check here if you have complex fields you don't want in the CSV.
+        
+        fields_to_export.append(db_lookup)
+        
+        # Use the field_name for a clean header
+        headers.append(field_name.replace('_', ' ').title())
+
+    # 2. Get data efficiently (use .values_list with the generated field list)
     data_values = queryset.values_list(*fields_to_export)
+    
+    # --- END REFACTORED SECTION ---
     
     # 3. Save the CSV to a temporary location
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    # Use the task ID to ensure a unique filename
     file_name = f'pricing_export_{timestamp}_{self.request.id}.csv' 
-    
-    # Use default_storage.path() here, as we know we're using local storage
     temp_path = default_storage.path(file_name) 
 
     try:
@@ -862,4 +893,4 @@ def export_pricing_data_to_csv(self, filters):
     
     except Exception as e:
         logger.error(f"Task {self.request.id} failed during CSV generation: {e}")
-        raise # Re-raise the exception to mark the Celery task as FAILURE
+        raise

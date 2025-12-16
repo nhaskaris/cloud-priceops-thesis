@@ -131,6 +131,9 @@ class NormalizedPricingDataViewSet(viewsets.ReadOnlyModelViewSet):
                         # Add content length to help the client track download progress
                         if file_size:
                             response['Content-Length'] = file_size
+                        
+                        print(f"DEBUG: Redirecting client to path: {redirect_path}") 
+                        print(f"DEBUG: Response headers being set: X-Accel-Redirect = {redirect_path}")
 
                         # 4. Cleanup (RISK ALERT: Delete immediately after setting redirect)
                         # Note: We delete the file immediately here because Django cannot know 
