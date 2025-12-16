@@ -4,9 +4,9 @@ services:
     container_name: priceops_django_api
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:8000"
-    ports:
-      - "8000:8000"
+             gunicorn core.wsgi:application -c /app/gunicorn.conf.py"
+    # ports:
+    #   - "8000:8000"
     env_file:
       - ./backend/.env
       - ./.env            
@@ -15,7 +15,22 @@ services:
       - redis
     volumes:
       - ./backend:/app
+      - media_data:/app/media
     restart: always
+  
+  nginx: # <-- NEW SERVICE
+    image: nginx:stable-alpine
+    container_name: priceops_nginx
+    volumes:
+      # Map the custom Nginx config
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Map the shared media volume (IMPORTANT: MUST MATCH BACKEND/CELERY PATH)
+      - media_data:/app/media/
+    ports:
+      - "80:80" # Map host port 80 to Nginx container port 80
+    depends_on:
+      - backend
+    restart: no
 
   db:
     image: postgres:15
@@ -60,6 +75,7 @@ services:
       - db
     volumes:
       - ./backend:/app
+      - media_data:/app/media
     restart: always
 
   celery_beat:
@@ -112,3 +128,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:

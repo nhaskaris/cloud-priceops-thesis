@@ -90,6 +90,10 @@
 # 15.12
 - Created an endpoint for models to retrieve data for their training/feature creation.
 
+# 16.12
+- Endpoind now returns a basic csv file with the columns
+- Introduced an nginx service for delivering files (Takes about 8 minutes)
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
