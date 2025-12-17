@@ -62,6 +62,7 @@ BEGIN
         'Dataproc', 'AmazonRedshift', 'Azure Data Explorer', 'Azure Databricks', 'AWSGlue', 
         'AWSLakeFormation', 'Stream Analytics', 'Azure Data Factory', 'Azure Data Factory v2',
         'Cloud Dataflow', 'AmazonCloudSearch', 'Time Series Insights', 'HDInsight', 'ElasticMapReduce',
+        'Redis Cache'
         
         -- Containers & App Platforms
         'Azure Kubernetes Service', 'Azure Container Apps', 'Container Instances', 
