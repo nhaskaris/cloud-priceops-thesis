@@ -92,7 +92,10 @@
 
 # 16.12
 - Endpoind now returns a basic csv file with the columns
-- Introduced an nginx service for delivering files (Takes about 8 minutes)
+- Introduced an nginx service for delivering files (Takes a lot of time)
+
+# 17.12
+- Hardcoding categories of iaas/paas etc of services for normalizing data.
 
 ### DOC
 ```docker exec -it priceops_celery_worker \

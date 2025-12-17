@@ -20,4 +20,4 @@ class PricingDataSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NormalizedPricingData
-        exclude = ['raw_entry', 'source_api', 'created_at', 'updated_at', 'is_active', 'description', 'id']
+        exclude = ['raw_entry', 'source_api', 'created_at', 'updated_at', 'is_active', 'description', 'id', 'price_per_unit', 'end_date']

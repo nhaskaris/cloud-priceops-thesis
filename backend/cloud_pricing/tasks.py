@@ -805,13 +805,13 @@ def weekly_pricing_dump_update():
         logger.exception("Failed to create APICallLog")
 
     # drop staging
-    try:
-        with connection.cursor() as cur:
-            cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
-            connection.commit()
-        logger.info("Staging table %s dropped successfully", staging_table)
-    except Exception as e:
-        logger.warning("Could not drop staging table %s: %s", staging_table, e)
+    # try:
+    #     with connection.cursor() as cur:
+    #         cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
+    #         connection.commit()
+    #     logger.info("Staging table %s dropped successfully", staging_table)
+    # except Exception as e:
+    #     logger.warning("Could not drop staging table %s: %s", staging_table, e)
 
     return f"OK: saved {total_saved}"
 
@@ -829,7 +829,11 @@ def export_pricing_data_to_csv(self, filters):
     # Apply Filters (Example handling for 'domain_label' from query params)
     domain_label_list = filters.get('domain_label')
     if domain_label_list:
-        queryset = queryset.filter(domain_label=domain_label_list[0]) 
+        queryset = queryset.filter(domain_label=domain_label_list[0])
+    
+    # Limit to 10k rows in DEV mode
+    if os.getenv("DEV", "").lower() in ("1", "true", "yes"):
+        queryset = queryset[:10000]
 
     # --- START REFACTORED SECTION ---
     
