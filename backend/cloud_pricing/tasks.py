@@ -856,36 +856,24 @@ def export_pricing_data_to_csv(self, filters):
     # Instantiate the serializer (it doesn't need data, just field definitions)
     serializer_instance = PricingDataSerializer()
     
-    # Get the field names that should be exported (all fields from the serializer)
-    # Note: This will include fields like 'provider' which might map to 'provider__name'
-    # if they are StringRelatedFields pointing to a related model's __str__ method.
     fields_to_export = []
     headers = []
     
-    # The serializer fields are an OrderedDict, preserving the desired CSV column order
+    serializer_instance = PricingDataSerializer()
+    
     for field_name, field_object in serializer_instance.fields.items():
-        # Get the actual database lookup path (e.g., 'provider' -> 'provider__name')
-        # Simple ModelFields: field_name
-        # StringRelatedFields: field_name + '__name' (or whatever the lookup is)
-        
+        # 1. Determine the database lookup
         db_lookup = field_name
-        
-        # Adjust the lookup for StringRelatedField. 
-        # Assuming StringRelatedField uses the related object's __str__, 
-        # which often translates to a 'name' lookup in .values_list().
-        # This part requires knowledge of your model/related field setup.
         if isinstance(field_object, serializers.StringRelatedField):
-            db_lookup = f'{field_name}__name' # Standard pattern for related fields in values_list
-        
-        # Skip fields that don't map cleanly to a database column (e.g., SerializerMethodField)
-        # Add a check here if you have complex fields you don't want in the CSV.
+            db_lookup = f'{field_name}__name'
         
         fields_to_export.append(db_lookup)
         
-        # Use the field_name for a clean header
-        headers.append(field_name.replace('_', ' ').title())
+        # 2. Keep the header EXACTLY the same as the serializer field name
+        # Do NOT use .title() or .replace('_', ' ')
+        headers.append(field_name) 
 
-    # 2. Get data efficiently (use .values_list with the generated field list)
+    # 3. Fetch data
     data_values = queryset.values_list(*fields_to_export)
     
     # --- END REFACTORED SECTION ---

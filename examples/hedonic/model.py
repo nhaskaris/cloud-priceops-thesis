@@ -8,32 +8,40 @@ from sklearn.linear_model import LassoCV
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
+import joblib
+import json
+import requests
+import os
 
 # =================================================================
-# STEP 0: Instructions and File Setup
+# STEP 0: Configuration and Column Setup (Snake Case)
 # =================================================================
 
-FILE_NAME = "pricing_export_20251218112136_5a97d0d9-bd2b-4870-b2c7-54a703886034.csv"
-TARGET_COL = 'Effective Price Per Hour'
+FILE_NAME = "pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
+API_URL = "http://10.100.106.82/engines/" 
+TARGET_COL = 'effective_price_per_hour'
 
-# Define columns by type
-LOG_CONTINUOUS_COLS = ['Term Length Years', 'Vcpu Count', 'Memory Gb']
+# Define columns by type to match Django Serializer output
+LOG_CONTINUOUS_COLS = ['term_length_years', 'vcpu_count', 'memory_gb']
+
 CATEGORICAL_COLS = [
-    'Provider', 'Service', 'Region', 'Pricing Model', 'Product Family',
-    'Instance Type', 'Operating System', 'Tenancy', 'Domain Label', 'Currency'
+    'provider', 'service', 'region', 'pricing_model', 'product_family',
+    'instance_type', 'operating_system', 'tenancy', 'domain_label', 'currency'
 ]
-BOOLEAN_COLS = ['Is All Upfront', 'Is Partial Upfront', 'Is No Upfront']
-IRRELEVANT_COLS = ['Storage Type', 'Price Unit', 'Effective Date']
+
+BOOLEAN_COLS = ['is_all_upfront', 'is_partial_upfront', 'is_no_upfront']
+
+IRRELEVANT_COLS = ['storage_type', 'price_unit', 'effective_date']
 
 try:
     df = pd.read_csv(FILE_NAME)
-    print(f"Successfully loaded {len(df)} rows from {FILE_NAME}.\n")
+    print(f"✅ Successfully loaded {len(df)} rows from {FILE_NAME}.\n")
 except FileNotFoundError:
-    print(f"Error: File '{FILE_NAME}' not found.")
+    print(f"❌ Error: File '{FILE_NAME}' not found.")
     exit()
 
 # =================================================================
-# STEP 1: Data Cleaning (Updated with Vital Columns Check)
+# STEP 1: Data Cleaning
 # =================================================================
 print("--- Starting Data Cleaning ---")
 
@@ -44,23 +52,23 @@ initial_count = len(df)
 df = df[missing_pct < threshold].copy()
 print(f"Removed {initial_count - len(df)} rows with >50% missing columns.")
 
-# 2. ΑΥΣΤΗΡΟΣ ΕΛΕΓΧΟΣ: Αφαίρεση αν λείπουν τα βασικά χαρακτηριστικά
-vital_cols = ['Product Family', 'Instance Type', 'Operating System', 'Vcpu Count', 'Memory Gb']
+# 2. Vital Columns Check: Remove rows missing key prediction features
+vital_cols = ['product_family', 'instance_type', 'operating_system', 'vcpu_count', 'memory_gb']
 pre_vital_count = len(df)
-# Αφαιρούμε τις γραμμές όπου οποιοδήποτε από τα vital_cols είναι NaN
 df = df.dropna(subset=vital_cols).copy()
-print(f"Removed {pre_vital_count - len(df)} rows due to missing vital features (CPU, RAM, OS, etc.).")
+print(f"Removed {pre_vital_count - len(df)} rows due to missing vital features.")
 
 # 3. Filter non-positive prices
 initial_rows = len(df)
 df = df[df[TARGET_COL] > 0].copy()
 print(f"Removed {initial_rows - len(df)} rows due to non-positive price.")
 
-# 4. Fill remaining NaNs for other columns
+# 4. Fill remaining NaNs and set types
 df[CATEGORICAL_COLS] = df[CATEGORICAL_COLS].fillna('not_specified')
 df[LOG_CONTINUOUS_COLS] = df[LOG_CONTINUOUS_COLS].fillna(0.0)
 df[BOOLEAN_COLS] = df[BOOLEAN_COLS].fillna(0).astype(int)
 
+# Drop irrelevant columns
 df.drop(columns=IRRELEVANT_COLS, errors='ignore', inplace=True)
 
 # =================================================================
@@ -118,65 +126,48 @@ model = sm.OLS(Y_final, X_ols, hasconst=True).fit(cov_type='HC3')
 print(model.summary())
 
 # =================================================================
-# STEP 5: Econometric Diagnostics & Visualization
+# STEP 5: Econometric Diagnostics
 # =================================================================
 print("\n--- Running Model Diagnostics ---")
 
-# 1. VIF Check
-vif_data = pd.DataFrame()
-vif_data["feature"] = X_ols.columns
-vif_data["VIF"] = [variance_inflation_factor(X_ols.values, i) for i in range(len(X_ols.columns))]
-print("\nTop 10 VIF Scores (VIF > 10 indicates high multicollinearity):")
-print(vif_data.sort_values(by="VIF", ascending=False).head(10))
-
-# 2. Breusch-Pagan Test
-bp_test = het_breuschpagan(model.resid, model.model.exog)
-print(f"\nBreusch-Pagan p-value: {bp_test[1]:.4f}")
-
-# 3. Accuracy Metric (MAPE)
+# 1. Accuracy Metric (MAPE)
 mape = np.mean(np.abs((np.exp(Y_final) - np.exp(model.fittedvalues)) / np.exp(Y_final))) * 100
 print(f"Mean Absolute Percentage Error (MAPE): {mape:.2f}%")
 
-# 4. Plots
-plt.figure(figsize=(18, 5))
+# 2. VIF Check (Sample of top 10)
+vif_data = pd.DataFrame()
+vif_data["feature"] = X_ols.columns
+vif_data["VIF"] = [variance_inflation_factor(X_ols.values, i) for i in range(len(X_ols.columns))]
+print(vif_data.sort_values(by="VIF", ascending=False).head(10))
 
-plt.subplot(1, 3, 1)
-sns.residplot(x=model.fittedvalues, y=model.resid, lowess=True, line_kws={'color': 'red'})
-plt.title('Residuals vs Fitted')
-plt.xlabel('Fitted Values (log_Price)')
-plt.ylabel('Residuals')
-
-plt.subplot(1, 3, 2)
-sm.qqplot(model.resid, line='45', ax=plt.gca())
-plt.title('Normal Q-Q Plot')
-
-plt.subplot(1, 3, 3)
+# 3. Save Visualizations
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
 plt.scatter(Y_final, model.fittedvalues, alpha=0.3)
 plt.plot([Y_final.min(), Y_final.max()], [Y_final.min(), Y_final.max()], 'r--')
 plt.title('Predicted vs Actual (Log Scale)')
-plt.xlabel('Actual log_Price')
-plt.ylabel('Predicted log_Price')
 
-plt.tight_layout()
-plt.savefig('model_diagnostics.png')
-plt.show()
-
-import os
-import joblib
-import json
-import requests
+plt.subplot(1, 2, 2)
+sns.histplot(model.resid, kde=True)
+plt.title('Residual Distribution')
+plt.savefig('training_diagnostics.png')
 
 # =================================================================
-# STEP 6: Save Model and Encoder Binaries
+# STEP 6: Save Binaries and Register via API
 # =================================================================
-API_URL = "http://10.100.106.82/engines/" 
+print("\n--- Registering Model with Django API ---")
 
-# Ensure these lists are converted to JSON STRINGS 
-# because multipart/form-data only accepts strings and files
+# 1. Export local binaries
+model_filename = "hedonic_model.pkl"
+encoder_filename = "encoder.pkl"
+joblib.dump(model, model_filename)
+joblib.dump(encoder, encoder_filename)
+
+# 2. Prepare API Data
 payload = {
     "name": "AWS_Compute_Pricing",
     "model_type": "Hedonic_Regression",
-    "version": "2025.12.18.04",
+    "version": "2025.12.18.06",
     "feature_names": json.dumps(list(X_ols.columns)),
     "log_transformed_features": json.dumps(LOG_CONTINUOUS_COLS),
     "categorical_features": json.dumps(CATEGORICAL_COLS),
@@ -186,15 +177,19 @@ payload = {
     "is_active": "true"
 }
 
-files = {
-    "model_binary": open("hedonic_model.pkl", "rb"),
-    "encoder_binary": open("encoder.pkl", "rb")
-}
+# 3. Send Multi-part POST request
+try:
+    with open(model_filename, "rb") as m_file, open(encoder_filename, "rb") as e_file:
+        files = {
+            "model_binary": (model_filename, m_file, 'application/octet-stream'),
+            "encoder_binary": (encoder_filename, e_file, 'application/octet-stream')
+        }
+        
+        response = requests.post(API_URL, data=payload, files=files)
 
-# Run the request
-response = requests.post(API_URL, data=payload, files=files)
-
-if response.status_code == 201:
-    print("✅ Model registered successfully!")
-else:
-    print(f"❌ Error {response.status_code}: {response.text}")
+    if response.status_code == 201:
+        print(f"✅ Model registered successfully! Version: {payload['version']}")
+    else:
+        print(f"❌ Error {response.status_code}: {response.text}")
+except Exception as e:
+    print(f"❌ Connection Error: {e}")

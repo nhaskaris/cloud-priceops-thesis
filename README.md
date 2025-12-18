@@ -107,12 +107,3 @@
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
 ```
-
-```
-docker exec -it priceops_celery_worker \
-  celery -A core call feast_offline.tasks.materialize_features
-```
-
-```
-feast apply
-``` in the direectory of feature_repo

@@ -12,7 +12,7 @@ from ..tasks import compute_price_prediction
 class MLEngineViewSet(viewsets.ModelViewSet):
     queryset = MLEngine.objects.all()
     serializer_class = MLEngineSerializer
-    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     @extend_schema(
         summary="Register a new ML Engine",
