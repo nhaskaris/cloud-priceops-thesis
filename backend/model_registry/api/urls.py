@@ -1,9 +1,8 @@
 from django.urls import path
-from .views import MLModelListCreateView, MLModelDetailView, ModelMetricListCreateView, ModelVersionListCreateView
+from .views import MLEngineViewSet
 
 urlpatterns = [
-    path('models/', MLModelListCreateView.as_view(), name='model-list-create'),
-    path('models/<int:pk>/', MLModelDetailView.as_view(), name='model-detail'),
-    path('models/<int:model_id>/versions/', ModelVersionListCreateView.as_view(), name='model-version-list-create'),
-    path('versions/<int:version_id>/metrics/', ModelMetricListCreateView.as_view(), name='model-metric-list-create'),
+    path('engines/', MLEngineViewSet.as_view({'get': 'list', 'post': 'create'}), name='mlengine-list'),
+    path('engines/<uuid:pk>/', MLEngineViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'}), name='mlengine-detail'),
+    path('engines/predict/<str:engine_name>/', MLEngineViewSet.as_view({'post': 'predict'}), name='mlengine-predict'),
 ]

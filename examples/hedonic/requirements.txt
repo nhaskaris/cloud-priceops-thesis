@@ -1,0 +1,18 @@
+# Data Manipulation and Math
+pandas
+numpy
+
+# Visualization
+matplotlib
+seaborn
+
+# Machine Learning and Preprocessing
+scikit-learn
+joblib
+
+# Econometrics and Statistics
+statsmodels
+scipy
+
+# API Communication
+requests
