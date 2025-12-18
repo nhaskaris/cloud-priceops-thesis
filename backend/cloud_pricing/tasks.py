@@ -7,14 +7,16 @@ from .models import (
     CloudProvider,
     Currency,
     APICallLog,
+    NormalizedPricingData
 )
 
 import csv
 from celery import shared_task
 from django.conf import settings
 from django.core.files.storage import default_storage
-from .models import NormalizedPricingData
 from datetime import datetime
+
+from django.db.models import Case, When, Value, FloatField, Q
 
 from celery import shared_task
 from django.db import connection
@@ -821,6 +823,7 @@ def export_pricing_data_to_csv(self, filters):
     Queries the database based on client filters, generates a CSV, and saves it,
     using the fields defined in PricingDataSerializer.
     """
+
     logger.info(f"Starting CSV export task {self.request.id} with filters: {filters}")
     
     # Base QuerySet - must match the mandatory filters from the view's get_queryset
@@ -830,6 +833,17 @@ def export_pricing_data_to_csv(self, filters):
     domain_label_list = filters.get('domain_label')
     if domain_label_list:
         queryset = queryset.filter(domain_label=domain_label_list[0])
+
+    min_data_completeness_val = filters.get('min_data_completeness')
+
+    if min_data_completeness_val and str(min_data_completeness_val[0]).lower() == 'true':
+        queryset = queryset.exclude(
+            Q(vcpu_count__isnull=True) | 
+            Q(memory_gb__isnull=True) | 
+            Q(product_family='') |
+            Q(product_family__isnull=True)
+        )
+        logger.info("Filtering for complete data only (min_data_completeness=True)")
     
     # Limit to 10k rows in DEV mode
     if os.getenv("DEV", "").lower() in ("1", "true", "yes"):

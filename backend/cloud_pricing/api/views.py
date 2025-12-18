@@ -38,18 +38,39 @@ class NormalizedPricingDataViewSet(viewsets.ReadOnlyModelViewSet):
     # ----------------------------------------------------------------------
     @extend_schema(
         summary="Start CSV Export Task",
-        description="Queues a Celery task to generate a filtered CSV file for training/testing data.",
+        description=(
+            "Queues a Celery task to generate a filtered CSV file for training/testing data. "
+            "IMPORTANT: This export automatically excludes rows missing vital modeling features "
+            "(Product Family, Instance Type, Operating System, vCPU, and Memory)."
+        ),
         parameters=[
             OpenApiParameter(
                 name='domain_label',
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
-                description='OPTIONAL: Filters the data used for export.',
+                description='OPTIONAL: Filters the data by domain label (e.g., "iaas", "paas").',
+                required=False,
+            ),
+            OpenApiParameter(
+                name='min_data_completeness',
+                type=OpenApiTypes.BOOL,
+                location=OpenApiParameter.QUERY,
+                description='OPTIONAL: If true, excludes rows missing vital modeling features (Product Family, vCPU, Memory). Default is false.',
                 required=False,
             ),
         ],
         responses={
-            202: {'description': 'Task queued', 'content': {'application/json': {'example': {'task_id': 'uuid', 'status': 'Task queued. Check status endpoint for file.'}}}},
+            202: {
+                'description': 'Task queued successfully.',
+                'content': {
+                    'application/json': {
+                        'example': {
+                            'task_id': '550e8400-e29b-41d4-a716-446655440000',
+                            'status': 'Task queued. Check status endpoint for file.'
+                        }
+                    }
+                }
+            },
         }
     )
     @action(detail=False, methods=['post'], url_path='export')
