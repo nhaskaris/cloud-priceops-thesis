@@ -97,6 +97,9 @@
 # 17.12
 - Hardcoding categories of iaas/paas etc of services for normalizing data.
 
+# 18.12
+- Added parameter to remove from csv data rows with many missing columns
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
