@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from ..models import MLEngine
 from .serializers import MLEngineSerializer
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiTypes
+from ..tasks import compute_price_prediction
 
 class MLEngineViewSet(viewsets.ModelViewSet):
     queryset = MLEngine.objects.all()
@@ -40,58 +41,27 @@ class MLEngineViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['post'], url_path='predict/(?P<engine_name>[^/.]+)')
     def predict(self, request, engine_name=None):
-        """
-        Translates raw user specs into a prediction using the 'Active' model.
-        URL Example: /api/engines/predict/AWS_Compute_Pricing/
-        """
-        # 1. Get the current Champion
+        # 1. Find the active engine
         engine = MLEngine.objects.filter(name=engine_name, is_active=True).first()
         if not engine:
-            return Response({"error": "No active engine found with this name."}, status=404)
+            return Response({"error": "No active engine found."}, status=404)
+
+        # 2. Trigger the Celery Task (Offload to worker container)
+        task = compute_price_prediction.delay(engine.id, request.data)
 
         try:
-            # 2. Load binaries from storage
-            model = joblib.load(engine.model_binary.path)
-            encoder = joblib.load(engine.encoder_binary.path) if engine.encoder_binary else None
-
-            # 3. Prepare Input Data
-            user_data = request.data  # e.g., {"vcpu": 4, "memory": 16, "os": "Linux"}
-            input_df = pd.DataFrame([user_data])
-
-            # 4. Apply Log Transformations
-            for col in engine.log_transformed_features:
-                if col in input_df.columns:
-                    input_df[f'log_{col}'] = np.log(input_df[col].astype(float).replace(0, 1e-6))
-
-            # 5. Apply Encoding
-            if encoder and engine.categorical_features:
-                encoded_feat = encoder.transform(input_df[engine.categorical_features])
-                encoded_df = pd.DataFrame(
-                    encoded_feat, 
-                    columns=encoder.get_feature_names_out(engine.categorical_features)
-                )
-                # Combine
-                input_df = pd.concat([input_df, encoded_df], axis=1)
-
-            # 6. Align with Training Features
-            # Ensure 'const' exists if it's in feature_names
-            if 'const' in engine.feature_names:
-                input_df['const'] = 1.0
-
-            # Filter and reorder columns to match exactly what the model expects
-            X_input = input_df[engine.feature_names]
-
-            # 7. Predict
-            prediction = model.predict(X_input)[0]
-            
-            # If it was a Log-Log Hedonic model, convert back from log
-            final_price = np.exp(prediction)
+            # 3. Wait for the result (e.g., up to 10 seconds)
+            # This blocks the Django thread but keeps the 'statsmodels' requirement in the worker
+            predicted_price = task.get(timeout=10)
 
             return Response({
                 "engine_version": engine.version,
-                "predicted_price": round(float(final_price), 6),
-                "currency": "USD"
+                "predicted_price": round(predicted_price, 6),
+                "currency": "USD",
+                "compute_node": "celery_worker" 
             })
 
+        except TimeoutError:
+            return Response({"error": "Prediction timed out in the worker."}, status=504)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"Worker Error: {str(e)}"}, status=400)

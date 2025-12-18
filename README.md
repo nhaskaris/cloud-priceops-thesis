@@ -98,7 +98,10 @@
 - Hardcoding categories of iaas/paas etc of services for normalizing data.
 
 # 18.12
-- Added parameter to remove from csv data rows with many missing columns
+- Added parameter to remove from csv data rows with many missing columns.
+- Added an example model and how it registers in our API.
+- Aletered Celery worker to contain modules needed (most famous ones) so it can run any model saved in our db.
+- Removed unnecessary app
 
 ### DOC
 ```docker exec -it priceops_celery_worker \

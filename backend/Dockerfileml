@@ -1,0 +1,28 @@
+# ---- Base Python image (matches your backend) ----
+FROM python:3.10-slim
+
+# ---- Set environment variables ----
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+WORKDIR /app
+
+# ---- Install system dependencies (needed for compiling ML libs) ----
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    curl \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Install ALL dependencies (Base + ML) ----
+COPY requirements_ml.txt .
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements_ml.txt
+
+# ---- Copy project code ----
+COPY . .
+
+# (Optional) You can define the default command here, 
+# but your docker-compose command will override it anyway.
+CMD ["celery", "-A", "core", "worker", "--loglevel=info"]

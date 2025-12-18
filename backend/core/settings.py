@@ -49,7 +49,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'cloud_pricing.apps.CloudPricingConfig',
-    'feast_offline.apps.FeastOfflineConfig',
     'model_registry.apps.ModelRegistryConfig',
     'drf_spectacular',
     'django_filters',
