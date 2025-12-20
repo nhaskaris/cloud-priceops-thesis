@@ -18,7 +18,7 @@ import os
 # =================================================================
 
 FILE_NAME = "pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
-API_URL = "http://10.100.106.82/engines/" 
+API_URL = "http://localhost/engines/" 
 TARGET_COL = 'effective_price_per_hour'
 
 # Define columns by type to match Django Serializer output
