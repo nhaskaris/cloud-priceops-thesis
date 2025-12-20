@@ -166,7 +166,7 @@ joblib.dump(encoder, encoder_filename)
 # 2. Prepare API Data
 payload = {
     "name": "AWS_Compute_Pricing",
-    "model_type": "Hedonic_Regression",
+    "model_type": "Regression",
     "version": "2025.12.18.06",
     "feature_names": json.dumps(list(X_ols.columns)),
     "log_transformed_features": json.dumps(LOG_CONTINUOUS_COLS),
