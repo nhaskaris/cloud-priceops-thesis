@@ -25,6 +25,7 @@ def compute_price_prediction(engine_id, user_data):
         # Note: The worker needs statsmodels/scikit-learn installed to unpickle these
         model = joblib.load(engine.model_binary.path)
         encoder = joblib.load(engine.encoder_binary.path) if engine.encoder_binary else None
+        scaler = joblib.load(engine.scaler_binary.path) if engine.scaler_binary else None
 
         # 3. Initialize DataFrame with user input
         input_df = pd.DataFrame([user_data])
@@ -78,7 +79,15 @@ def compute_price_prediction(engine_id, user_data):
             logger.error(f"Missing features after alignment: {missing}")
             raise ValueError(f"Feature alignment failed. Missing: {missing}")
 
-        # 10. Predict and Convert from Log-Price to Real-Price
+        # 10. Apply scaling if model requires it (Ridge, etc.)
+        if scaler:
+            X_input = pd.DataFrame(
+                scaler.transform(X_input),
+                columns=X_input.columns,
+                index=X_input.index
+            )
+
+        # 11. Predict and Convert from Log-Price to Real-Price
         prediction_log = model.predict(X_input)[0]
         final_price = np.exp(prediction_log)
 

@@ -22,6 +22,7 @@ class MLEngine(models.Model):
     # Files: The 'Brain' and the 'Translator'
     model_binary = models.FileField(upload_to='models/binaries/')
     encoder_binary = models.FileField(upload_to='models/encoders/', null=True, blank=True)
+    scaler_binary = models.FileField(upload_to='models/scalers/', null=True, blank=True, help_text="Feature scaler for models like Ridge")
     
     # Logic Mapping: Used for reconstructing the input vector during prediction
     feature_names = models.JSONField(help_text="Ordered list of columns: ['const', 'log_Vcpu', ...]")
