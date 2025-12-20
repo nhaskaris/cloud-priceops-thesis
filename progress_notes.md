@@ -103,6 +103,9 @@
 - Aletered Celery worker to contain modules needed (most famous ones) so it can run any model saved in our db.
 - Removed unnecessary app
 
+# 19.12
+- Re-worked frontend to be able to preditct
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
