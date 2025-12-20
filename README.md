@@ -258,13 +258,15 @@ curl -X POST http://localhost:8000/engines/predict/AWS_Compute_Pricing/ \
 
 ### Overview
 
-The frontend is a clean, modern React + TypeScript application built with Vite that provides an intuitive interface for ML-powered cloud price predictions. Users can input resource specifications and receive instant price estimates using trained hedonic regression models.
+The frontend is a clean, modern React + TypeScript application built with Vite that provides an intuitive interface for ML-powered cloud price predictions. Users select a model **type** (e.g., "Regression") and the system automatically chooses the best performing model of that type based on R² score and MAPE metrics.
 
 ### Features
 
-- **ML Engine Selection**: Choose from registered prediction models with real-time performance metrics (R², MAPE)
+- **Model Type Selection**: Choose from available model types (Regression, etc.) - system auto-selects best model
+- **Smart Model Selection**: Backend automatically uses the best performing model for the selected type
 - **Smart Form Validation**: Required fields (vCPU, Memory) with optional parameters for refined predictions
 - **Real-time Predictions**: Instant price estimates with monthly and yearly cost projections
+- **Performance Metrics**: Live display of best model's R² and MAPE scores
 - **Clean UI/UX**: Professional design with clear visual hierarchy and responsive layout
 
 ### Usage
@@ -272,6 +274,10 @@ The frontend is a clean, modern React + TypeScript application built with Vite t
 1. **Navigate to** http://localhost:3000
 
 2. **Configure your prediction:**
+   - **Select Model Type:**
+     - Choose prediction model type (e.g., "Regression")
+     - System displays best model and its performance metrics
+   
    - **Required Fields:**
      - **vCPU** - Number of virtual CPUs (e.g., 4)
      - **Memory (GB)** - RAM in gigabytes (e.g., 16)
@@ -294,6 +300,7 @@ The frontend is a clean, modern React + TypeScript application built with Vite t
 
 **Input:**
 ```
+Model Type: Regression
 vCPU: 4
 Memory: 16 GB
 Region: us-east-1 (optional)
@@ -307,25 +314,27 @@ Tenancy: Shared (optional)
 │  Predicted Price: $0.052400 USD / hour           │
 │  Monthly Cost: $38.25 USD                        │
 │  Yearly Cost: $459.00 USD                        │
-│  Engine: AWS_Compute_Pricing v2025.12.18.06      │
+│  Model Used: AWS_Compute_Pricing v2025.12.18.06  │
 └──────────────────────────────────────────────────┘
 ```
 
 ### Model Information Display
 
-The interface shows live model performance metrics:
-- **Type**: Hedonic_Regression
+The interface shows live model type and best model performance metrics:
+- **Type**: Regression
+- **Available Models**: 3
+- **Best Model**: AWS_Compute_Pricing v2025.12.18.06
 - **R² Score**: 0.9175 (91.75% variance explained)
 - **MAPE**: 41.72% (mean absolute percentage error)
 - **Log Features**: term_length_years, vcpu_count, memory_gb
-- **Categorical Features**: provider, region, OS, tenancy, etc.
+- **Categorical Features**: provider, region, operating_system, tenancy, etc.
 
 ### API Integration
 
 Frontend communicates with backend via REST API:
 
 ```javascript
-POST /engines/predict/{engine_name}/
+POST /engines/predict-by-type/{model_type}/
 Content-Type: application/json
 
 {

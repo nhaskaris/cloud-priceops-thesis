@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import './PredictForm.css'
 
-type Engine = {
-  id: string
-  name: string
-  version: string
-  model_type: string
-  is_active: boolean
-  r_squared?: number
-  mape?: number
+type ModelType = {
+  type: string
+  count: number
+  best_model: {
+    name: string
+    version: string
+    r_squared?: number
+    mape?: number
+    is_active: boolean
+  }
   feature_names?: string[]
   log_transformed_features?: string[]
   categorical_features?: string[]
@@ -18,7 +20,6 @@ type PredictionResult = {
   engine_version: string
   predicted_price: number
   currency: string
-  compute_node: string
 }
 
 type AdditionalParam = {
@@ -29,9 +30,9 @@ type AdditionalParam = {
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
 export default function PredictForm() {
-  const [engines, setEngines] = useState<Engine[]>([])
-  const [selectedEngine, setSelectedEngine] = useState<string>('')
-  const [engineDetails, setEngineDetails] = useState<Engine | null>(null)
+  const [modelTypes, setModelTypes] = useState<ModelType[]>([])
+  const [selectedType, setSelectedType] = useState<string>('')
+  const [typeDetails, setTypeDetails] = useState<ModelType | null>(null)
 
   // Common fields
   const [vcpu, setVcpu] = useState<string>('')
@@ -53,38 +54,34 @@ export default function PredictForm() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PredictionResult | null>(null)
 
-  // Fetch available engines
+  // Fetch available model types
   useEffect(() => {
-    const fetchEngines = async () => {
+    const fetchModelTypes = async () => {
       try {
-        const url = `${BACKEND_URL}/engines/`
+        const url = `${BACKEND_URL}/engines/types/`
         const res = await fetch(url)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        const engineList: Engine[] = Array.isArray(data) ? data : data?.results ?? []
-        setEngines(engineList)
+        const typeList: ModelType[] = Array.isArray(data) ? data : data?.results ?? []
+        setModelTypes(typeList)
         
-        // Auto-select first active engine
-        const active = engineList.find(e => e.is_active)
-        if (active) {
-          setSelectedEngine(active.name)
-          setEngineDetails(active)
-        } else if (engineList.length > 0) {
-          setSelectedEngine(engineList[0].name)
-          setEngineDetails(engineList[0])
+        // Auto-select first type
+        if (typeList.length > 0) {
+          setSelectedType(typeList[0].type)
+          setTypeDetails(typeList[0])
         }
       } catch (err: any) {
-        console.error('Failed to fetch engines:', err)
+        console.error('Failed to fetch model types:', err)
       }
     }
-    fetchEngines()
+    fetchModelTypes()
   }, [])
 
-  // Update engine details when selection changes
+  // Update type details when selection changes
   useEffect(() => {
-    const engine = engines.find((e: Engine) => e.name === selectedEngine)
-    setEngineDetails(engine || null)
-  }, [selectedEngine, engines])
+    const type = modelTypes.find((t: ModelType) => t.type === selectedType)
+    setTypeDetails(type || null)
+  }, [selectedType, modelTypes])
 
   const addParam = () => {
     setAdditionalParams([...additionalParams, { key: '', value: '' }])
@@ -135,7 +132,7 @@ export default function PredictForm() {
     })
 
     try {
-      const url = `${BACKEND_URL}/engines/predict/${encodeURIComponent(selectedEngine)}/`
+      const url = `${BACKEND_URL}/engines/predict-by-type/${encodeURIComponent(selectedType)}/`
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,27 +162,27 @@ export default function PredictForm() {
         </p>
 
         <form onSubmit={handleSubmit}>
-          {/* Engine Selection */}
+          {/* Model Type Selection */}
           <div className="form-group">
-            <label htmlFor="engine">ML Engine</label>
+            <label htmlFor="modelType">Model Type</label>
             <select
-              id="engine"
-              value={selectedEngine}
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedEngine(e.target.value)}
-              disabled={engines.length === 0}
+              id="modelType"
+              value={selectedType}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedType(e.target.value)}
+              disabled={modelTypes.length === 0}
             >
-              {engines.length === 0 && <option>Loading engines...</option>}
-              {engines.map((e: Engine) => (
-                <option key={e.id} value={e.name}>
-                  {e.name} v{e.version} {e.is_active ? '(Active)' : ''}
+              {modelTypes.length === 0 && <option>Loading model types...</option>}
+              {modelTypes.map((t: ModelType) => (
+                <option key={t.type} value={t.type}>
+                  {t.type} ({t.count} model{t.count !== 1 ? 's' : ''})
                 </option>
               ))}
             </select>
-            {engineDetails && (
+            {typeDetails && typeDetails.best_model && (
               <small className="engine-info">
-                Type: {engineDetails.model_type} | 
-                R²: {engineDetails.r_squared?.toFixed(4) ?? 'N/A'} | 
-                MAPE: {engineDetails.mape?.toFixed(2)}%
+                Best Model: {typeDetails.best_model.name} v{typeDetails.best_model.version} | 
+                R²: {typeDetails.best_model.r_squared?.toFixed(4) ?? 'N/A'} | 
+                MAPE: {typeDetails.best_model.mape?.toFixed(2)}%
               </small>
             )}
           </div>
@@ -335,7 +332,7 @@ export default function PredictForm() {
           <button
             type="submit"
             className="btn-primary"
-            disabled={loading || !selectedEngine}
+            disabled={loading || !selectedType}
           >
             {loading ? 'Predicting...' : 'Get Price Prediction'}
           </button>
@@ -381,20 +378,24 @@ export default function PredictForm() {
           </div>
         )}
 
-        {engineDetails && !result && !error && (
+        {typeDetails && !result && !error && (
           <div className="info-box">
-            <h3>Engine Information</h3>
+            <h3>Model Information</h3>
             <div className="info-details">
-              <p><strong>Name:</strong> {engineDetails.name}</p>
-              <p><strong>Type:</strong> {engineDetails.model_type}</p>
-              <p><strong>Version:</strong> {engineDetails.version}</p>
-              <p><strong>R² Score:</strong> {engineDetails.r_squared?.toFixed(4) ?? 'N/A'}</p>
-              <p><strong>MAPE:</strong> {engineDetails.mape?.toFixed(2)}%</p>
-              {engineDetails.log_transformed_features && engineDetails.log_transformed_features.length > 0 && (
-                <p><strong>Log Features:</strong> {engineDetails.log_transformed_features.join(', ')}</p>
+              <p><strong>Type:</strong> {typeDetails.type}</p>
+              <p><strong>Available Models:</strong> {typeDetails.count}</p>
+              {typeDetails.best_model && (
+                <>
+                  <p><strong>Best Model:</strong> {typeDetails.best_model.name} v{typeDetails.best_model.version}</p>
+                  <p><strong>R² Score:</strong> {typeDetails.best_model.r_squared?.toFixed(4) ?? 'N/A'}</p>
+                  <p><strong>MAPE:</strong> {typeDetails.best_model.mape?.toFixed(2)}%</p>
+                </>
               )}
-              {engineDetails.categorical_features && engineDetails.categorical_features.length > 0 && (
-                <p><strong>Categorical Features:</strong> {engineDetails.categorical_features.join(', ')}</p>
+              {typeDetails.log_transformed_features && typeDetails.log_transformed_features.length > 0 && (
+                <p><strong>Log Features:</strong> {typeDetails.log_transformed_features.join(', ')}</p>
+              )}
+              {typeDetails.categorical_features && typeDetails.categorical_features.length > 0 && (
+                <p><strong>Categorical Features:</strong> {typeDetails.categorical_features.join(', ')}</p>
               )}
             </div>
           </div>
