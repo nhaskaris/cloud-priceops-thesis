@@ -106,6 +106,12 @@
 # 19.12
 - Re-worked frontend to be able to preditct
 
+# 21.12
+- Made schema include more information for users
+
+# 23.12
+- Included price_unit back into db
+
 ### DOC
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update

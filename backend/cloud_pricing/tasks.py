@@ -178,7 +178,7 @@ def _return_sql_insert_normalized():
                         0.0
                     )) AS effective_price_per_hour,
 
-                    -- 4. CONDITIONAL PRICE UNIT SELECTION (Logic unchanged)
+                    -- 4. CONDITIONAL PRICE UNIT SELECTION (Keep price_unit_raw always for reference)
                     CASE
                         WHEN 
                             COALESCE(
@@ -207,7 +207,7 @@ def _return_sql_insert_normalized():
                                 0.0
                             ) = 0.0 
                         THEN s1.price_unit_raw 
-                        ELSE NULL
+                        ELSE s1.price_unit_raw
                     END AS price_unit,
 
                     -- 5. COMMITMENT FLAGS (Logic unchanged)
