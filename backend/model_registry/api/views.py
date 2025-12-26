@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Max, Q
 from ..models import MLEngine
-from .serializers import MLEngineSerializer
+from .serializers import MLEngineSerializer, MLEngineSummarySerializer
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiTypes
 from ..tasks import compute_price_prediction
 
@@ -176,6 +176,20 @@ class MLEngineViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="List Models (Summary)",
+        description=(
+            "Returns all registered models without any binary file fields, "
+            "exposing only identification and metrics for dashboards and comparisons."
+        ),
+        responses={200: MLEngineSummarySerializer(many=True)}
+    )
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        engines = self.get_queryset()
+        data = MLEngineSummarySerializer(engines, many=True).data
+        return Response(data)
 
     @extend_schema(
         summary="Get Available Model Types",

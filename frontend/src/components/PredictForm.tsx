@@ -34,6 +34,9 @@ export default function PredictForm() {
   const [selectedType, setSelectedType] = useState<string>('')
   const [typeDetails, setTypeDetails] = useState<ModelType | null>(null)
 
+  // Animation state
+  const [isLoaded, setIsLoaded] = useState(false)
+
   // Common fields
   const [vcpu, setVcpu] = useState<string>('')
   const [memory, setMemory] = useState<string>('')
@@ -70,6 +73,7 @@ export default function PredictForm() {
           setSelectedType(typeList[0].type)
           setTypeDetails(typeList[0])
         }
+        setTimeout(() => setIsLoaded(true), 100)
       } catch (err: any) {
         console.error('Failed to fetch model types:', err)
       }
@@ -154,12 +158,31 @@ export default function PredictForm() {
   }
 
   return (
-    <div className="predict-form-container">
+    <div className={`predict-form-container ${isLoaded ? 'animate-fade-in' : ''}`}>
       <div className="form-section">
-        <h2>Cloud Price Prediction</h2>
-        <p className="subtitle">
-          Enter resource specifications to get ML-powered price predictions
-        </p>
+        <div className="page-header">
+          <div className="page-header-breadcrumb">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M4 11H2v3h2v-3zm5-4H7v7h2V7zm5-5v12h-2V2h2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-2zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3z"/>
+            </svg>
+            Predict / Estimate
+          </div>
+          <h1 className="page-header-title">Price Prediction Engine</h1>
+          <p className="page-header-subtitle">
+            Enter your resource specifications to receive instant ML-powered price estimates with confidence metrics
+          </p>
+        </div>
+
+        {/* How it Works */}
+        <div style={{ background: '#0f172a', padding: '1rem', borderRadius: 8, marginBottom: '1.5rem', border: '1px solid #334155' }} className="animate-slide-up animate-delay-1">
+          <div style={{ color: '#60a5fa', fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>HOW IT WORKS:</div>
+          <ol style={{ margin: 0, paddingLeft: '1.25rem', color: '#cbd5e1', fontSize: '0.875rem', lineHeight: 1.7 }}>
+            <li>Fill in required fields (vCPU & Memory)</li>
+            <li>Optionally add region, OS, and other parameters</li>
+            <li>Click "Get Price Prediction" to see results</li>
+            <li>View hourly, monthly, and yearly cost estimates</li>
+          </ol>
+        </div>
 
         <form onSubmit={handleSubmit}>
           {/* Model Type Selection */}
@@ -341,6 +364,27 @@ export default function PredictForm() {
 
       {/* Results Section */}
       <div className="results-section">
+        {!error && !result && (
+          <div className="info-box">
+            <h3>Getting Started</h3>
+            <div className="info-details">
+              <p><strong>Quick Start:</strong></p>
+              <p style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>
+                1. Enter vCPU and Memory (required)<br/>
+                2. Add optional details for better accuracy<br/>
+                3. Submit to see instant predictions
+              </p>
+              
+              <p><strong>Example Values:</strong></p>
+              <ul style={{ fontSize: '0.875rem', marginLeft: '1rem', color: '#94a3b8' }}>
+                <li>vCPU: 4, Memory: 16 GB</li>
+                <li>Region: us-east-1</li>
+                <li>OS: Linux, Tenancy: Shared</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="error-box">
             <h3>Error</h3>
@@ -390,12 +434,6 @@ export default function PredictForm() {
                   <p><strong>R² Score:</strong> {typeDetails.best_model.r_squared?.toFixed(4) ?? 'N/A'}</p>
                   <p><strong>MAPE:</strong> {typeDetails.best_model.mape?.toFixed(2)}%</p>
                 </>
-              )}
-              {typeDetails.log_transformed_features && typeDetails.log_transformed_features.length > 0 && (
-                <p><strong>Log Features:</strong> {typeDetails.log_transformed_features.join(', ')}</p>
-              )}
-              {typeDetails.categorical_features && typeDetails.categorical_features.length > 0 && (
-                <p><strong>Categorical Features:</strong> {typeDetails.categorical_features.join(', ')}</p>
               )}
             </div>
           </div>

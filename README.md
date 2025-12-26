@@ -15,26 +15,6 @@ Cloud PriceOps is a full-stack application that ingests, normalizes, and analyze
 - **Domain Classification**: Automatic service classification (IaaS, PaaS, SaaS, Utility, etc.)
 - **API Documentation**: Comprehensive OpenAPI/Swagger documentation via DRF Spectacular
 
-## 🏗️ Architecture
-
-```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  React Frontend │ ───► │  Nginx Reverse   │ ───► │ Django Backend  │
-│  (Vite + TS)    │      │     Proxy        │      │   REST API      │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
-                                                             │
-                         ┌───────────────────────────────────┼────────┐
-                         │                                   │        │
-                    ┌────▼─────┐      ┌──────────────┐  ┌───▼────┐  │
-                    │PostgreSQL│      │ Redis Cache  │  │ Celery │  │
-                    │ Database │      │  + Broker    │  │Workers │  │
-                    └──────────┘      └──────────────┘  └────────┘  │
-                                                                     │
-                                      ┌──────────────────────────────▼───┐
-                                      │  Infracost API (External Source)  │
-                                      └────────────────────────────────────┘
-```
-
 ## 📋 Prerequisites
 
 - Docker & Docker Compose
@@ -85,13 +65,13 @@ VITE_APP_BACKEND_URL=http://localhost:8000
 ### 3. Launch with Docker Compose
 
 ```bash
-docker-compose up --build
+docker compose up -d --build
 ```
 
 This will start:
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **Swagger UI**: http://localhost:8000/api/schema/swagger-ui/
+- **Backend API**: http://localhost
+- **Swagger UI**: http://localhost/api/schema/swagger-ui/
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
 
@@ -99,10 +79,10 @@ This will start:
 
 ```bash
 # Run migrations
-docker-compose exec backend python manage.py migrate
+docker compose exec backend python manage.py migrate
 
 # Create initial cloud provider data
-docker-compose exec backend python manage.py init_cloud_data
+docker compose exec backend python manage.py init_cloud_data
 ```
 
 ### 5. Import Pricing Data
@@ -110,7 +90,7 @@ docker-compose exec backend python manage.py init_cloud_data
 Trigger the weekly pricing dump import (initial run may take 10-15 minutes):
 
 ```bash
-docker-compose exec backend python manage.py shell
+docker compose exec backend python manage.py shell
 >>> from cloud_pricing.tasks import weekly_pricing_dump_update
 >>> weekly_pricing_dump_update.delay()
 ```
@@ -236,6 +216,9 @@ curl "http://localhost:8000/normalized-pricing-data/export-status/?task_id=550e8
 |----------|--------|-------------|
 | `/engines/` | GET | List registered ML engines |
 | `/engines/` | POST | Register new model (multipart/form-data) |
+| `/engines/summary/` | GET | List all models (name, type, version, metrics only) |
+| `/engines/types/` | GET | Get available model types and best model per type |
+| `/engines/predict-by-type/{model_type}/` | POST | Predict using best model of a type |
 | `/engines/predict/<engine_name>/` | POST | Get price prediction |
 
 **Prediction Example:**
@@ -268,6 +251,12 @@ The frontend is a clean, modern React + TypeScript application built with Vite t
 - **Real-time Predictions**: Instant price estimates with monthly and yearly cost projections
 - **Performance Metrics**: Live display of best model's R² and MAPE scores
 - **Clean UI/UX**: Professional design with clear visual hierarchy and responsive layout
+
+#### New Pages & Navigation
+- Home: Overview with quick links for "Predict" and "Contribute"
+- Predict: Form-driven ML price estimation
+- Models: Dashboard of all models via `/engines/summary/`
+- Contribute: Upload/register models to `/engines/` (multipart)
 
 ### Usage
 

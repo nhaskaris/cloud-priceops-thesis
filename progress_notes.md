@@ -116,3 +116,5 @@
 ```docker exec -it priceops_celery_worker \
   celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
 ```
+
+Call azure/gpc to check if they return ram/cpu

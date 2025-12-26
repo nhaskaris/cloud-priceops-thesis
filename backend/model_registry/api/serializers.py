@@ -25,3 +25,22 @@ class MLEngineSerializer(serializers.ModelSerializer):
         for coeff in coeffs_data:
             ModelCoefficient.objects.create(engine=engine, **coeff)
         return engine
+
+
+class MLEngineSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MLEngine
+        # Expose only identifying info and metrics, excluding any file fields
+        fields = [
+            'id',
+            'name',
+            'model_type',
+            'version',
+            'r_squared',
+            'mape',
+            'rmse',
+            'training_sample_size',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
