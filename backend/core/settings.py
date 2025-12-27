@@ -152,8 +152,6 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        # Remove BrowsableAPIRenderer for production API-only usage
-        'rest_framework.renderers.BrowsableAPIRenderer',  # Keep for development
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
@@ -171,9 +169,14 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React default
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite default
+    "http://127.0.0.1:5173",
     "http://localhost:8080",  # Vue default
     "http://127.0.0.1:8080",
-    "http://10.100.106.82:8000",  # ST Admin local machine
+    "http://10.100.106.82",   # ST Admin local machine
+    "http://10.100.106.82:3000",  # Frontend on ST Admin machine
+    "http://10.100.106.82:5173",  # Vite on ST Admin machine
+    "http://10.100.106.82:8000",  # Backend on ST Admin machine
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -195,4 +198,38 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API documentation for Cloud PriceOps backend services.',
     'VERSION': '0.1.0',
     'SERVE_INCLUDE_SCHEMA': False,
+}
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
 }

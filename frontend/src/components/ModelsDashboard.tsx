@@ -54,6 +54,56 @@ export default function ModelsDashboard() {
     return sorted
   }, [rows, q, sortKey, sortDir])
 
+  const typeAgg = useMemo(() => {
+    const acc: Record<string, { count: number; active: number; sumR2: number; r2n: number; sumMape: number; mapen: number }> = {}
+    rows.forEach(r => {
+      if (!acc[r.model_type]) acc[r.model_type] = { count: 0, active: 0, sumR2: 0, r2n: 0, sumMape: 0, mapen: 0 }
+      const bucket = acc[r.model_type]
+      bucket.count += 1
+      if (r.is_active) bucket.active += 1
+      if (typeof r.r_squared === 'number') {
+        bucket.sumR2 += r.r_squared
+        bucket.r2n += 1
+      }
+      if (typeof r.mape === 'number') {
+        bucket.sumMape += r.mape
+        bucket.mapen += 1
+      }
+    })
+    return Object.entries(acc).map(([type, v]) => ({
+      type,
+      count: v.count,
+      active: v.active,
+      avgR2: v.r2n ? v.sumR2 / v.r2n : null,
+      avgMape: v.mapen ? v.sumMape / v.mapen : null,
+    }))
+  }, [rows])
+
+  const maxCount = typeAgg.reduce((m, t) => Math.max(m, t.count), 1)
+  const maxR2 = typeAgg.reduce((m, t) => Math.max(m, t.avgR2 ?? 0), 0.0001)
+
+  // Group models by type for detailed charts
+  const modelsByType = useMemo(() => {
+    const grouped: Record<string, EngineSummary[]> = {}
+    rows.forEach(r => {
+      if (!grouped[r.model_type]) grouped[r.model_type] = []
+      grouped[r.model_type].push(r)
+    })
+    return grouped
+  }, [rows])
+
+  const hasMultipleTypes = Object.keys(modelsByType).length > 1
+
+  // Prepare data for R² distribution by type
+  const r2ByType = useMemo(() => {
+    return rows
+      .filter(r => typeof r.r_squared === 'number')
+      .map(r => ({ type: r.model_type, r2: r.r_squared!, name: r.name }))
+      .sort((a, b) => a.type.localeCompare(b.type))
+  }, [rows])
+
+  const maxR2Value = r2ByType.reduce((m, d) => Math.max(m, d.r2), 0.0001)
+
   const changeSort = (k: keyof EngineSummary) => {
     if (k === sortKey) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     else {
@@ -72,7 +122,6 @@ export default function ModelsDashboard() {
           </svg>
           Analytics / Models
         </div>
-        <h1 className="page-header-title">Model Comparison Dashboard</h1>
         <p className="page-header-subtitle">Browse and compare all registered prediction engines by performance metrics. Sort by clicking column headers.</p>
       </div>
 
@@ -91,6 +140,140 @@ export default function ModelsDashboard() {
           <div style={{ color: '#f1f5f9', fontSize: '1.75rem', fontWeight: 700 }}>{new Set(rows.map(r => r.model_type)).size}</div>
         </div>
       </div>
+
+      {/* Mini charts */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+        <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.35rem' }}>Models by Type</div>
+          {typeAgg.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No data yet.</div>}
+          {typeAgg.map(t => (
+            <div key={t.type} style={{ marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#e2e8f0' }}>
+                <span>{t.type}</span>
+                <span>{t.count}</span>
+              </div>
+              <div style={{ background: '#0f172a', borderRadius: 6, height: 10, overflow: 'hidden', border: '1px solid #334155' }}>
+                <div style={{ height: '100%', width: `${(t.count / maxCount) * 100}%`, background: 'linear-gradient(90deg, #60a5fa, #2563eb)' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <div style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '0.35rem' }}>Average R² by Type</div>
+          {typeAgg.length === 0 && <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No data yet.</div>}
+          {typeAgg.map(t => (
+            <div key={t.type} style={{ marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#e2e8f0' }}>
+                <span>{t.type}</span>
+                <span>{t.avgR2 == null ? '—' : t.avgR2.toFixed(3)}</span>
+              </div>
+              <div style={{ background: '#0f172a', borderRadius: 6, height: 10, overflow: 'hidden', border: '1px solid #334155' }}>
+                <div style={{ height: '100%', width: `${((t.avgR2 ?? 0) / maxR2) * 100}%`, background: 'linear-gradient(90deg, #22d3ee, #0ea5e9)' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* R² Distribution by Type - Show if multiple types exist */}
+      {hasMultipleTypes && r2ByType.length > 0 && (
+        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, border: '1px solid #334155', marginBottom: '1.5rem' }}>
+          <h3 style={{ color: '#f1f5f9', margin: '0 0 1rem 0', fontSize: '1.125rem' }}>R² Distribution by Model Type</h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 180, padding: '0.5rem 0' }}>
+            {r2ByType.map((d, i) => (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
+                <div 
+                  style={{ 
+                    width: '100%', 
+                    background: d.type === 'ridge_regression' ? 'linear-gradient(180deg, #60a5fa, #2563eb)' : 
+                               d.type === 'hedonic_regression' ? 'linear-gradient(180deg, #22d3ee, #0ea5e9)' : 
+                               'linear-gradient(180deg, #a78bfa, #7c3aed)',
+                    borderRadius: '4px 4px 0 0',
+                    height: `${(d.r2 / maxR2Value) * 100}%`,
+                    minHeight: d.r2 > 0 ? '4px' : '0',
+                    position: 'relative',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={`${d.name}: ${d.r2.toFixed(4)}`}
+                >
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '-1.25rem', 
+                    left: '50%', 
+                    transform: 'translateX(-50%)', 
+                    fontSize: '0.7rem', 
+                    color: '#94a3b8',
+                    whiteSpace: 'nowrap',
+                    opacity: 0.8
+                  }}>
+                    {d.r2.toFixed(3)}
+                  </div>
+                </div>
+                <div style={{ 
+                  fontSize: '0.7rem', 
+                  color: '#cbd5e1', 
+                  marginTop: '0.5rem', 
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  width: '100%'
+                }} title={d.name}>
+                  {d.name.length > 10 ? d.name.substring(0, 8) + '…' : d.name}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#64748b', textAlign: 'center' }}>
+                  {d.type.replace('_', ' ')}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748b', paddingTop: '0.5rem', borderTop: '1px solid #334155' }}>
+            <span>Models by type & R²</span>
+            <span>Max: {maxR2Value.toFixed(4)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Type Breakdown - Show if multiple types */}
+      {hasMultipleTypes && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          {Object.entries(modelsByType).map(([type, models]) => {
+            const withR2 = models.filter(m => typeof m.r_squared === 'number')
+            const avgR2 = withR2.length > 0 ? withR2.reduce((s, m) => s + m.r_squared!, 0) / withR2.length : null
+            const avgMape = models.filter(m => typeof m.mape === 'number').reduce((s, m, _, arr) => s + m.mape / arr.length, 0)
+            
+            return (
+              <div key={type} style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, border: '1px solid #334155' }}>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#60a5fa', marginBottom: '0.75rem', textTransform: 'capitalize' }}>
+                  {type.replace(/_/g, ' ')}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Count</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e2e8f0' }}>{models.length}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Active</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#22d3ee' }}>{models.filter(m => m.is_active).length}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Avg R²</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e2e8f0' }}>{avgR2 == null ? '—' : avgR2.toFixed(3)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Avg MAPE</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#e2e8f0' }}>{avgMape ? avgMape.toFixed(2) + '%' : '—'}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#64748b', borderTop: '1px solid #334155', paddingTop: '0.5rem' }}>
+                  {models.slice(0, 3).map(m => m.name).join(', ')}
+                  {models.length > 3 && ` +${models.length - 3} more`}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div style={{ margin: '1rem 0' }}>
         <input

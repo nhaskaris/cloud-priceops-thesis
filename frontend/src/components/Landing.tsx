@@ -15,20 +15,14 @@ export default function Landing() {
         <h1 className="page-header-title" style={{ fontSize: '3rem', marginBottom: '1rem' }}>
           Cloud PriceOps
         </h1>
-        <p className="page-header-subtitle" style={{ marginLeft: 'auto', marginRight: 'auto' }}>
-          Enterprise-grade machine learning platform for cloud compute price estimation and model benchmarking
-        </p>
       </div>
 
       {/* Two User Paths */}
       <section style={{ marginBottom: '3rem' }} className="animate-slide-up animate-delay-1">
-        <h3 style={{ color: '#f1f5f9', textAlign: 'center', marginBottom: '2rem', fontSize: '1.5rem' }}>
-          Choose Your Path
-        </h3>
         <div style={{ display: 'grid', gap: '2rem', gridTemplateColumns: '1fr 1fr' }}>
           
           {/* Predict Flow */}
-          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '2px solid #3b82f6' }}>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '2px solid #3b82f6', display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem', borderRadius: 6, display: 'inline-block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>
               FOR USERS
             </div>
@@ -54,14 +48,14 @@ export default function Landing() {
               </div>
             </div>
 
-            <Link to="/predict" className="btn-primary" style={{ display: 'block', textAlign: 'center', marginTop: '1.5rem', padding: '0.875rem' }}>
+            <Link to="/predict" className="btn-primary" style={{ display: 'block', textAlign: 'center', marginTop: 'auto', padding: '0.875rem' }}>
               Start Predicting →
             </Link>
           </div>
 
           {/* Contribute Flow */}
-          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '2px solid #475569' }}>
-            <div style={{ background: '#475569', color: 'white', padding: '0.5rem 1rem', borderRadius: 6, display: 'inline-block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '2px solid #3b82f6', display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem', borderRadius: 6, display: 'inline-block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>
               FOR CONTRIBUTORS
             </div>
             <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.75rem', marginBottom: '1rem' }}>
@@ -90,7 +84,7 @@ export default function Landing() {
               </div>
             </div>
 
-            <Link to="/contribute" className="btn-secondary" style={{ display: 'block', textAlign: 'center', marginTop: '1.5rem', padding: '0.875rem' }}>
+            <Link to="/contribute" className="btn-primary" style={{ display: 'block', textAlign: 'center', marginTop: 'auto', padding: '0.875rem' }}>
               Contribute Model →
             </Link>
           </div>
@@ -104,7 +98,7 @@ export default function Landing() {
           Browse all registered models, compare performance metrics (R², MAPE, RMSE), and track model versions
         </p>
         <Link to="/models" className="btn-secondary" style={{ display: 'inline-block', padding: '0.75rem 1.5rem' }}>
-          Open Dashboard →
+          Open Models →
         </Link>
       </section>
 
