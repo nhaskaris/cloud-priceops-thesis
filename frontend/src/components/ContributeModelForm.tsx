@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
@@ -77,8 +78,13 @@ export default function ContributeModelForm() {
           </svg>
           Contribute / Register
         </div>
-        <h1 className="page-header-title">Register Model Engine</h1>
         <p className="page-header-subtitle">Upload your trained pricing model with metadata and performance metrics. All JSON fields require valid syntax.</p>
+      </div>
+
+      <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.5rem', color: '#cbd5e1' }}>
+        <strong style={{ color: '#f1f5f9' }}>Note:</strong> If your model depends on extra files (embeddings, tokenizers, auxiliary assets), please open a pull request in
+        {' '}<a href="https://github.com/nhaskaris/cloud-priceops-thesis" style={{ color: '#60a5fa' }}>cloud-priceops-thesis</a> and follow the
+        {' '}<Link to="/docs#extra-model-files" style={{ color: '#60a5fa' }}>extra model files guidance</Link> in the docs.
       </div>
 
       {/* Step-by-step guide */}
