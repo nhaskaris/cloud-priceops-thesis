@@ -1,28 +1,28 @@
-# Cloud PriceOps Thesis
+# Cloud PriceOps
 
-A comprehensive cloud pricing analytics and Total Cost of Ownership (TCO) estimation platform leveraging machine learning for intelligent pricing predictions across AWS, Azure, and GCP.
+A cloud pricing analytics and Total Cost of Ownership (TCO) estimation platform with machine learning-powered price predictions for AWS, Azure, and GCP.
 
-## 🎯 Overview
+## Overview
 
-Cloud PriceOps is a full-stack application that ingests, normalizes, and analyzes cloud pricing data from multiple providers through the Infracost API. It features a Django REST backend with Celery task processing, PostgreSQL database, and a React + TypeScript frontend for TCO estimation and price comparison.
+Cloud PriceOps is a full-stack application that ingests, normalizes, and analyzes cloud pricing data from multiple providers using the Infracost API. The platform features a Django REST backend with asynchronous Celery task processing, PostgreSQL database, and a React + TypeScript frontend for ML-powered price prediction.
 
 ### Key Features
 
-- **Multi-Cloud Price Normalization**: Automated ingestion and normalization of pricing data from AWS, Azure, and GCP
-- **ML-Powered Price Prediction**: Hedonic regression models for intelligent price forecasting
-- **TCO Estimation**: Interactive frontend for comparing Total Cost of Ownership across cloud providers
-- **Data Export Pipeline**: Asynchronous CSV export with Nginx X-Accel-Redirect for efficient large file delivery
-- **Domain Classification**: Automatic service classification (IaaS, PaaS, SaaS, Utility, etc.)
-- **API Documentation**: Comprehensive OpenAPI/Swagger documentation via DRF Spectacular
+- **Multi-Cloud Price Normalization** - Automated ingestion and normalization of pricing data from AWS, Azure, and GCP
+- **ML-Powered Price Prediction** - Interactive web interface for predicting cloud resource costs using registered ML models
+- **Model Registry** - Upload, version, and manage custom pricing prediction models
+- **Data Export Pipeline** - Asynchronous CSV export with Nginx X-Accel-Redirect for efficient large file delivery
+- **Domain Classification** - Automatic service classification (IaaS, PaaS, SaaS, Database, Storage, ML, Utility)
+- **API Documentation** - Comprehensive OpenAPI/Swagger documentation via DRF Spectacular
 
-## 📋 Prerequisites
+## Prerequisites
 
-- Docker & Docker Compose
+- Docker and Docker Compose
 - Python 3.10+ (for local development)
 - Node.js 22+ (for local development)
 - Infracost API Key ([Get one here](https://www.infracost.io/docs/#2-get-api-key))
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone the Repository
 
@@ -97,7 +97,7 @@ docker compose exec backend python manage.py shell
 
 Or via Django admin/Celery Beat (configured for weekly automatic updates).
 
-## 📊 Data Flow
+## Data Flow
 
 ### 1. Pricing Data Ingestion
 
@@ -186,7 +186,7 @@ Celery → Backend: Return predicted price
 Backend → Frontend: {"predicted_price": 0.052}
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Pricing Data
 
@@ -237,7 +237,7 @@ curl -X POST http://localhost:8000/engines/predict/AWS_Compute_Pricing/ \
 # Response: {"predicted_price": 0.0524}
 ```
 
-## 🎨 Frontend - ML Price Prediction Interface
+## Frontend - ML Price Prediction Interface
 
 ### Overview
 
@@ -345,7 +345,7 @@ Content-Type: application/json
 }
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 cloud-priceops-thesis/
@@ -380,7 +380,7 @@ cloud-priceops-thesis/
 └── README.md
 ```
 
-## 🔧 Development
+## Development
 
 ### Local Backend Development
 
@@ -421,7 +421,7 @@ docker-compose exec backend python manage.py test
 docker-compose exec frontend npm test
 ```
 
-## 📊 Database Schema
+## Database Schema
 
 ### Key Models
 
@@ -452,7 +452,7 @@ CREATE INDEX idx_price_positive ON normalized_pricing_data (price_per_unit) WHER
 CREATE INDEX idx_npd_domain_label ON normalized_pricing_data (domain_label);
 ```
 
-## 🛠️ Advanced Features
+## Advanced Features
 
 ### X-Accel-Redirect Export
 
@@ -482,7 +482,7 @@ app.conf.beat_schedule = {
 }
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Database Connection Issues
 
@@ -520,7 +520,7 @@ proxy_read_timeout 300s;
 proxy_send_timeout 300s;
 ```
 
-## 📝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -528,18 +528,18 @@ proxy_send_timeout 300s;
 4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is part of a thesis research and is provided for educational purposes.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **Infracost** for providing the comprehensive cloud pricing APIs
+- Infracost for providing the comprehensive cloud pricing APIs
 
-## 📧 Contact
+## Contact
 
 For questions or issues, please open a GitHub issue or contact the project maintainer.
 
 ---
 
-**Built with** ❤️ **using Django, React, PostgreSQL, Redis, and Celery**
+Built with Django, React, PostgreSQL, Redis, and Celery
