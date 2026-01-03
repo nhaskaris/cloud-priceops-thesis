@@ -6,6 +6,7 @@ import Landing from './components/Landing'
 import ModelsDashboard from './components/ModelsDashboard'
 import ContributeModelForm from './components/ContributeModelForm'
 import Documentation from './components/Documentation'
+import CostOptimizer from './components/CostOptimizer'
 
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
@@ -37,6 +38,7 @@ function App() {
             <nav className={`main-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
               <Link to="/" onClick={() => setMobileMenuOpen(false)}>Home</Link>
               <Link to="/predict" onClick={() => setMobileMenuOpen(false)}>Predict</Link>
+              <Link to="/optimizer" onClick={() => setMobileMenuOpen(false)}>Optimizer</Link>
               <Link to="/models" onClick={() => setMobileMenuOpen(false)}>Models</Link>
               <Link to="/contribute" onClick={() => setMobileMenuOpen(false)}>Contribute</Link>
               <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Docs</Link>
@@ -48,6 +50,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/predict" element={<PredictForm />} />
+            <Route path="/optimizer" element={<CostOptimizer />} />
             <Route path="/models" element={<ModelsDashboard />} />
             <Route path="/contribute" element={<ContributeModelForm />} />
             <Route path="/docs" element={<Documentation />} />

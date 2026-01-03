@@ -1,0 +1,98 @@
+/* CostOptimizer component styles */
+.cost-optimizer-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.cost-input-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+  .cost-input-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cost-input-group {
+  margin-bottom: 1.5rem;
+}
+
+.cost-input-label {
+  display: block;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.cost-input-field {
+  width: 100%;
+  padding: 0.75rem;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 1rem;
+  transition: border-color 0.2s ease;
+}
+
+.cost-input-field:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.cost-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.cost-result-card {
+  padding: 1rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.cost-result-card:hover {
+  border-color: #475569;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.cost-result-title {
+  color: #e2e8f0;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.cost-result-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.cost-result-positive {
+  color: #22c55e;
+}
+
+.cost-result-negative {
+  color: #ef4444;
+}
+
+.cost-savings-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #064e3b, #047857);
+  color: #a7f3d0;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #10b981;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+}

@@ -28,7 +28,16 @@ def compute_price_prediction(engine_id, user_data):
         scaler = joblib.load(engine.scaler_binary.path) if engine.scaler_binary else None
 
         # 3. Initialize DataFrame with user input
-        input_df = pd.DataFrame([user_data])
+        # Normalize parameter names (frontend might send vcpu instead of vcpu_count)
+        normalized_data = user_data.copy()
+        if 'vcpu' in normalized_data and 'vcpu_count' not in normalized_data:
+            normalized_data['vcpu_count'] = normalized_data.pop('vcpu')
+        if 'memory' in normalized_data and 'memory_gb' not in normalized_data:
+            normalized_data['memory_gb'] = normalized_data.pop('memory')
+        if 'os' in normalized_data and 'operating_system' not in normalized_data:
+            normalized_data['operating_system'] = normalized_data.pop('os')
+        
+        input_df = pd.DataFrame([normalized_data])
 
         # 4. Handle Categorical Columns (Alignment)
         # If user didn't provide a category, use 'not_specified' (matches training)

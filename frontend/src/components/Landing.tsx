@@ -12,13 +12,38 @@ export default function Landing() {
           </svg>
           Platform Home
         </div>
-        <h1 className="page-header-title" style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+        <h1 className="page-header-title" style={{ fontSize: '3.5rem', marginBottom: '1rem', fontWeight: 800 }}>
           Cloud PriceOps
         </h1>
+        <p className="page-header-subtitle" style={{ fontSize: '1.2rem', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
+          AI-powered cloud infrastructure cost optimization and prediction platform
+        </p>
       </div>
 
+      {/* Key Features */}
+      <section style={{ marginBottom: '3rem', marginTop: '3rem' }}>
+        <div style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>⚡</div>
+            <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>Instant Predictions</h4>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Get accurate hourly cost estimates in seconds</p>
+          </div>
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎯</div>
+            <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>IaaS Specialized</h4>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Models trained on real infrastructure pricing data</p>
+          </div>
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📊</div>
+            <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>Model Comparison</h4>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Track R², MAPE, and performance metrics</p>
+          </div>
+        </div>
+      </section>
+
       {/* Two User Paths */}
-      <section style={{ marginBottom: '3rem' }} className="animate-slide-up animate-delay-1">
+      <section style={{ marginBottom: '3rem' }}>
+        <h2 style={{ textAlign: 'center', color: '#f1f5f9', fontSize: '2rem', marginBottom: '2rem' }}>Get Started</h2>
         <div style={{ display: 'grid', gap: '2rem', gridTemplateColumns: '1fr 1fr' }}>
           
           {/* Predict Flow */}
@@ -26,7 +51,7 @@ export default function Landing() {
             <div style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem', borderRadius: 6, display: 'inline-block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>
               FOR USERS
             </div>
-            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.75rem', marginBottom: '1rem' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.5rem', marginBottom: '0.75rem' }}>
               Get Price Predictions
             </h3>
             <p style={{ color: '#94a3b8', marginBottom: '1.5rem', lineHeight: 1.6 }}>
@@ -58,7 +83,7 @@ export default function Landing() {
             <div style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem', borderRadius: 6, display: 'inline-block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '1rem' }}>
               FOR CONTRIBUTORS
             </div>
-            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.75rem', marginBottom: '1rem' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.5rem', marginBottom: '0.75rem' }}>
               Register Your Model
             </h3>
             <p style={{ color: '#94a3b8', marginBottom: '1.5rem', lineHeight: 1.6 }}>
@@ -91,26 +116,29 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Models Dashboard Section */}
-      <section style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155', textAlign: 'center', marginBottom: '2rem' }}>
-        <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.5rem' }}>Explore All Models</h3>
-        <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-          Browse all registered models, compare performance metrics (R², MAPE, RMSE), and track model versions
-        </p>
-        <Link to="/models" className="btn-secondary" style={{ display: 'inline-block', padding: '0.75rem 1.5rem' }}>
-          Open Models →
-        </Link>
-      </section>
-
-      {/* Documentation Link */}
-      <section style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155', textAlign: 'center' }}>
-        <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.5rem' }}>Need Help?</h3>
-        <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-          Check out our complete documentation with step-by-step guides, API examples, and code samples
-        </p>
-        <Link to="/docs" className="btn-secondary" style={{ display: 'inline-block', padding: '0.75rem 1.5rem' }}>
-          Read Documentation →
-        </Link>
+      {/* Additional Resources */}
+      <section style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: '1fr 1fr' }}>
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155', textAlign: 'center' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.3rem', marginBottom: '0.75rem' }}>Explore Models</h3>
+            <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', lineHeight: 1.6, fontSize: '0.95rem' }}>
+              Compare performance metrics and track all registered models
+            </p>
+            <Link to="/models" className="btn-secondary" style={{ display: 'inline-block', padding: '0.75rem 1.5rem' }}>
+              View Models →
+            </Link>
+          </div>
+          
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155', textAlign: 'center' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.3rem', marginBottom: '0.75rem' }}>Documentation</h3>
+            <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', lineHeight: 1.6, fontSize: '0.95rem' }}>
+              API guides, examples, and integration tutorials
+            </p>
+            <Link to="/docs" className="btn-secondary" style={{ display: 'inline-block', padding: '0.75rem 1.5rem' }}>
+              Read Docs →
+            </Link>
+          </div>
+        </div>
       </section>
     </div>
   )

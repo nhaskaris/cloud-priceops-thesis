@@ -4,16 +4,111 @@ import numpy as np
 from rest_framework import viewsets, status, parsers
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Max, Q
+from django.db.models import Max, Q, F
+from django.db.models import Value
+from django.db.models.functions import Greatest, Least, Abs
 from ..models import MLEngine
 from .serializers import MLEngineSerializer, MLEngineSummarySerializer
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiTypes
 from ..tasks import compute_price_prediction
+from cloud_pricing.models import NormalizedPricingData
 
 class MLEngineViewSet(viewsets.ModelViewSet):
     queryset = MLEngine.objects.all()
     serializer_class = MLEngineSerializer
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def _find_closest_pricing(self, vcpu, memory, region, os, domain_label=None, mape=None):
+        """
+        Find closest pricing records from NormalizedPricingData that match the specs.
+        Returns list of pricing records ranked by match quality.
+        
+        Args:
+            vcpu: vCPU count to match
+            memory: Memory in GB to match
+            region: Region name
+            os: Operating system
+            domain_label: Filter by domain label (e.g., 'iaas', 'storage', 'database').
+                           'iaas' filters by domain_label containing 'iaas'.
+            mape: Model MAPE (for reference, not used in filtering)
+        """
+        queryset = NormalizedPricingData.objects.filter(
+            is_active=True,
+            effective_price_per_hour__gt=0  # Must have hourly pricing
+        )
+        
+        # Filter by domain_label if domain_label is provided
+        if domain_label:
+            queryset = queryset.filter(domain_label__icontains=domain_label)
+        
+        # Filter by region if provided
+        if region:
+            queryset = queryset.filter(region__name__icontains=region)
+        
+        # Filter by OS if provided and not empty
+        if os and os.strip():
+            queryset = queryset.filter(operating_system__icontains=os)
+        
+        # Filter by vCPU and memory (allow some flexibility)
+        results = []
+        for record in queryset:
+            # Calculate matching score
+            score = 0
+            penalties = 0
+            
+            # vCPU matching (prefer exact or close match)
+            if record.vcpu_count:
+                vcpu_diff = abs(record.vcpu_count - vcpu)
+                if vcpu_diff == 0:
+                    score += 100
+                elif vcpu_diff <= 2:
+                    score += 50 - (vcpu_diff * 10)
+                elif vcpu_diff <= 4:
+                    score += 20 - (vcpu_diff * 2)
+                else:
+                    penalties += vcpu_diff * 2
+            else:
+                penalties += 10  # Penalize if no vCPU info
+            
+            # Memory matching (prefer exact or close match)
+            if record.memory_gb:
+                memory_diff = abs(float(record.memory_gb) - memory)
+                if memory_diff == 0:
+                    score += 100
+                elif memory_diff <= 4:
+                    score += 50 - (memory_diff * 10)
+                elif memory_diff <= 8:
+                    score += 20 - (memory_diff * 2)
+                else:
+                    penalties += memory_diff
+            else:
+                penalties += 10  # Penalize if no memory info
+            
+            final_score = score - penalties
+            
+            # Include all results (no minimum score threshold)
+            results.append({
+                'score': final_score,
+                'price': float(record.effective_price_per_hour),
+                'instance_type': record.instance_type,
+                'vcpu': record.vcpu_count,
+                'memory': float(record.memory_gb) if record.memory_gb else None,
+                'region': record.region.name if record.region else None,
+                'provider': record.provider.name if record.provider else None,
+                'service': record.service.name if record.service else None,
+                'os': record.operating_system,
+                'tenancy': record.tenancy,
+                'product_family': record.product_family,
+                'pricing_model': record.pricing_model.name if record.pricing_model else None,
+                'description': record.description,
+                'db_id': str(record.id),
+            })
+        
+        # Sort by score (best matches first)
+        results = sorted(results, key=lambda x: x['score'], reverse=True)
+        
+        # Return top 5 matches (increased from 3)
+        return results[:5]
 
     @extend_schema(
         summary="Register a New ML Model",
@@ -297,6 +392,21 @@ class MLEngineViewSet(viewsets.ModelViewSet):
         try:
             predicted_price = task.get(timeout=10)
 
+            # Find closest actual pricing records from DB
+            vcpu = request.data.get('vcpu_count', request.data.get('vcpu', 0))
+            memory = request.data.get('memory_gb', request.data.get('memory', 0))
+            region = request.data.get('region', '')
+            os = request.data.get('operating_system', request.data.get('os', ''))
+            domain_label = request.data.get('domain_label', None)  # Optional filter
+            
+            actual_pricing_options = self._find_closest_pricing(vcpu, memory, region, os, domain_label, best_model.mape)
+            
+            # Debug logging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Optimize request: vcpu={vcpu}, memory={memory}, region={region}, os={os}, domain_label={domain_label}")
+            logger.debug(f"Found {len(actual_pricing_options)} pricing options in database")
+
             return Response({
                 "engine_version": f"{best_model.name}-v{best_model.version}",
                 "predicted_price": round(predicted_price, 6),
@@ -304,7 +414,9 @@ class MLEngineViewSet(viewsets.ModelViewSet):
                 "model_type": model_type,
                 "model_name": best_model.name,
                 "r_squared": best_model.r_squared,
-                "mape": best_model.mape
+                "mape": best_model.mape,
+                "input_specs": request.data,
+                "actual_pricing_options": actual_pricing_options
             })
 
         except TimeoutError:
