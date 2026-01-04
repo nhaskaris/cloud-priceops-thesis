@@ -16,7 +16,7 @@ import os
 # Uses L2 regularization to prevent overfitting
 # =================================================================
 
-FILE_NAME = "../hedonic/pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
+FILE_NAME = "pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
 API_URL = "http://localhost/engines/" 
 TARGET_COL = 'effective_price_per_hour'
 

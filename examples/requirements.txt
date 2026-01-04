@@ -1,0 +1,5 @@
+# Hedonic requirements
+-r hedonic/requirements.txt
+
+# Ridge requirements
+-r ridge_regression/requirements.txt
