@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from ..models import (
     CloudProvider, CloudService, Region,
-    PricingModel, Currency, NormalizedPricingData, PriceHistory
+    PricingModel, Currency, NormalizedPricingData
 )
 from ..models import RawPricingData
 

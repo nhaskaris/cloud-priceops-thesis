@@ -162,21 +162,6 @@ class NormalizedPricingData(models.Model):
         return name
 
 
-class PriceHistory(models.Model):
-    """Historical pricing data"""
-    pricing_data = models.ForeignKey('NormalizedPricingData', on_delete=models.CASCADE, related_name='history')
-    price_per_unit = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
-    change_percentage = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
-    recorded_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = "price_history"
-        ordering = ['-recorded_at']
-
-    def __str__(self):
-        return f"History for {self.pricing_data} at {self.recorded_at}"
-
-
 class APICallLog(models.Model):
     """API call logs for monitoring and rate-limiting"""
     api_endpoint = models.URLField()

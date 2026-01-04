@@ -353,42 +353,19 @@ def _return_sql_check_updates_normalized():
                 AND old.operating_system = newd.operating_system
                 AND old.tenancy = newd.tenancy
                 AND old.price_unit = newd.price_unit
-                WHERE old.price_per_unit <> newd.price_per_unit
+                WHERE old.price_per_unit <> newd.price_per_unit AND old.is_active = true
             ),
-            history_insert AS (
-                INSERT INTO price_history (pricing_data_id, price_per_unit, change_percentage, recorded_at)
-                SELECT
-                    normalized_id,
-                    new_price,
-                    CASE WHEN old_price = 0 THEN NULL
-                        ELSE ROUND(((new_price - old_price) / old_price) * 100.0, 2)
-                    END,
-                    NOW()
-                FROM changed
-                RETURNING pricing_data_id
-            ),
-            updated_rows AS (
+            deactivated_rows AS (
                 UPDATE normalized_pricing_data dst
                 SET
-                    price_per_unit = src.price_per_unit,
-                    description = src.description,
-                    term_length_year = src.term_length_year,
+                    is_active = false,
+                    end_date = NOW(),
                     updated_at = NOW()
-                FROM normalized_input src
-                WHERE dst.provider_id = src.provider_id
-                AND dst.service_id = src.service_id
-                AND dst.region_id = src.region_id
-                AND dst.pricing_model_id = src.pricing_model_id
-                AND dst.currency_id = src.currency_id
-                AND dst.product_family = src.product_family
-                AND dst.instance_type = src.instance_type
-                AND dst.operating_system = src.operating_system
-                AND dst.tenancy = src.tenancy
-                AND dst.price_unit = src.price_unit
-                RETURNING dst.id
+                FROM changed
+                WHERE dst.id = changed.normalized_id
+                RETURNING dst.id, dst.price_per_unit, changed.new_price
             )
-            SELECT 
-                (SELECT COUNT(*) FROM updated_rows) AS updated_count;
+            SELECT COUNT(*) AS updated_count FROM deactivated_rows;
             """
 
 def _return_sql_string_raw():
@@ -586,11 +563,11 @@ def weekly_pricing_dump_update():
     os.makedirs(LOCAL_DIR, exist_ok=True)
 
     # --- If local dump exists, skip network ---
-    if os.path.exists(LOCAL_PATH):
+    if os.path.exists(LOCAL_PATH) and not os.getenv("DEV", "").lower() in ("1", "true", "yes"):
         logger.info("Using local Infracost dump: %s", LOCAL_PATH)
         tmp_path = LOCAL_PATH
     else:
-        logger.info("Local dump not found. Downloading new dump...")
+        logger.info("Fetching Infracost pricing dump URL...")
         
         try:
             download_url = _get_download_url()
