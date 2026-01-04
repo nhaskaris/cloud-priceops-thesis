@@ -84,7 +84,13 @@ export default function Documentation() {
             <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, marginBottom: '1.5rem', border: '1px solid #334155' }}>
               <h4 style={{ color: '#60a5fa', marginTop: 0 }}>Via Web Interface</h4>
               <ol style={{ color: '#cbd5e1', lineHeight: 1.8 }}>
-                <li>Navigate to the <Link to="/predict" style={{ color: '#60a5fa' }}>Predict page</Link></li>
+                <li>Navigate to the <Link to="/analyze" style={{ color: '#60a5fa' }}>Analyze page</Link></li>
+                <li>Choose a mode:
+                  <ul style={{ marginTop: '0.5rem', color: '#94a3b8' }}>
+                    <li><strong style={{ color: '#cbd5e1' }}>Cost Optimizer:</strong> Find cheaper alternatives to your current setup</li>
+                    <li><strong style={{ color: '#cbd5e1' }}>Advanced Prediction:</strong> Get detailed predictions with full control over parameters</li>
+                  </ul>
+                </li>
                 <li>Enter required fields:
                   <ul style={{ marginTop: '0.5rem', color: '#94a3b8' }}>
                     <li><strong style={{ color: '#cbd5e1' }}>vCPU:</strong> Number of virtual CPUs (e.g., 4)</li>
@@ -93,9 +99,9 @@ export default function Documentation() {
                 </li>
                 <li>Optionally add:
                   <ul style={{ marginTop: '0.5rem', color: '#94a3b8' }}>
-                    <li><strong style={{ color: '#cbd5e1' }}>Provider:</strong> AWS, GCP, Azure, etc.</li>
                     <li><strong style={{ color: '#cbd5e1' }}>Region:</strong> us-east-1, eu-west-1, etc.</li>
                     <li><strong style={{ color: '#cbd5e1' }}>Operating System:</strong> Linux, Windows</li>
+                    <li><strong style={{ color: '#cbd5e1' }}>Tenancy:</strong> Shared, Dedicated, Host</li>
                   </ul>
                 </li>
                 <li>Click <strong style={{ color: '#cbd5e1' }}>Get Predictions</strong></li>

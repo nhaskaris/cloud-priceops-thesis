@@ -116,10 +116,6 @@ export default function ModelsDashboard() {
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div className="page-header">
         <div className="page-header-breadcrumb">
-          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M2.5 8a5.5 5.5 0 0 1 8.25-4.764.5.5 0 0 0 .5-.866A6.5 6.5 0 1 0 14.5 8a.5.5 0 0 0-1 0 5.5 5.5 0 1 1-11 0z"/>
-            <path d="M15.354 3.354a.5.5 0 0 0-.708-.708L8 9.293 5.354 6.646a.5.5 0 1 0-.708.708l3 3a.5.5 0 0 0 .708 0l7-7z"/>
-          </svg>
           Analytics / Models
         </div>
         <p className="page-header-subtitle">Browse and compare all registered prediction engines by performance metrics. Sort by clicking column headers.</p>
@@ -140,6 +136,250 @@ export default function ModelsDashboard() {
           <div style={{ color: '#f1f5f9', fontSize: '1.75rem', fontWeight: 700 }}>{new Set(rows.map(r => r.model_type)).size}</div>
         </div>
       </div>
+
+      {/* Comprehensive Visualizations */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+        {/* R² Performance Chart */}
+        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <h3 style={{ color: '#f1f5f9', margin: '0 0 1rem 0', fontSize: '1.125rem' }}>R² Performance by Model</h3>
+          {r2ByType.length === 0 ? (
+            <div style={{ color: '#94a3b8', fontSize: '0.9rem', padding: '2rem', textAlign: 'center' }}>No R² data available</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '0.5rem 0' }}>
+                {r2ByType.map((d, i) => (
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
+                    <div 
+                      style={{ 
+                        width: '100%', 
+                        background: d.r2 >= 0.9 ? 'linear-gradient(180deg, #22c55e, #16a34a)' :
+                                   d.r2 >= 0.85 ? 'linear-gradient(180deg, #60a5fa, #2563eb)' : 
+                                   d.r2 >= 0.7 ? 'linear-gradient(180deg, #fbbf24, #f59e0b)' :
+                                   'linear-gradient(180deg, #f87171, #dc2626)',
+                        borderRadius: '4px 4px 0 0',
+                        height: `${(d.r2 / maxR2Value) * 100}%`,
+                        minHeight: d.r2 > 0 ? '8px' : '0',
+                        position: 'relative',
+                        transition: 'all 0.3s ease',
+                        cursor: 'pointer',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                      }}
+                      title={`${d.name}: R² = ${d.r2.toFixed(4)}`}
+                    >
+                      <div style={{ 
+                        position: 'absolute', 
+                        top: '-1.5rem', 
+                        left: '50%', 
+                        transform: 'translateX(-50%)', 
+                        fontSize: '0.75rem', 
+                        color: '#e2e8f0',
+                        whiteSpace: 'nowrap',
+                        fontWeight: 600,
+                        backgroundColor: '#0f172a',
+                        padding: '0.125rem 0.25rem',
+                        borderRadius: 4
+                      }}>
+                        {d.r2.toFixed(3)}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.7rem', 
+                      color: '#cbd5e1', 
+                      marginTop: '0.5rem', 
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      width: '100%',
+                      fontWeight: 500
+                    }} title={d.name}>
+                      {d.name.length > 12 ? d.name.substring(0, 10) + '…' : d.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontSize: '0.75rem', color: '#64748b', paddingTop: '0.75rem', borderTop: '1px solid #334155' }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #22c55e, #16a34a)', borderRadius: 2 }} />
+                    Excellent (≥0.9)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #60a5fa, #2563eb)', borderRadius: 2 }} />
+                    Good (≥0.85)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #fbbf24, #f59e0b)', borderRadius: 2 }} />
+                    Fair (≥0.7)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #f87171, #dc2626)', borderRadius: 2 }} />
+                    Poor (&lt;0.7)
+                  </span>
+                </div>
+                <span>Max: {maxR2Value.toFixed(4)}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* MAPE Distribution Chart */}
+        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <h3 style={{ color: '#f1f5f9', margin: '0 0 1rem 0', fontSize: '1.125rem' }}>MAPE Distribution</h3>
+          {rows.filter(r => typeof r.mape === 'number').length === 0 ? (
+            <div style={{ color: '#94a3b8', fontSize: '0.9rem', padding: '2rem', textAlign: 'center' }}>No MAPE data available</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '0.5rem 0' }}>
+                {rows.filter(r => typeof r.mape === 'number').map((r, i) => {
+                  const maxMape = Math.max(...rows.filter(r => typeof r.mape === 'number').map(r => r.mape!))
+                  return (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
+                      <div 
+                        style={{ 
+                          width: '100%', 
+                          background: r.mape! <= 20 ? 'linear-gradient(180deg, #22c55e, #16a34a)' :
+                                     r.mape! <= 40 ? 'linear-gradient(180deg, #fbbf24, #f59e0b)' : 
+                                     'linear-gradient(180deg, #f87171, #dc2626)',
+                          borderRadius: '4px 4px 0 0',
+                          height: `${(r.mape! / maxMape) * 100}%`,
+                          minHeight: r.mape! > 0 ? '8px' : '0',
+                          position: 'relative',
+                          transition: 'all 0.3s ease',
+                          cursor: 'pointer',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }}
+                        title={`${r.name}: MAPE = ${r.mape!.toFixed(2)}%`}
+                      >
+                        <div style={{ 
+                          position: 'absolute', 
+                          top: '-1.5rem', 
+                          left: '50%', 
+                          transform: 'translateX(-50%)', 
+                          fontSize: '0.75rem', 
+                          color: '#e2e8f0',
+                          whiteSpace: 'nowrap',
+                          fontWeight: 600,
+                          backgroundColor: '#0f172a',
+                          padding: '0.125rem 0.25rem',
+                          borderRadius: 4
+                        }}>
+                          {r.mape!.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.7rem', 
+                        color: '#cbd5e1', 
+                        marginTop: '0.5rem', 
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '100%',
+                        fontWeight: 500
+                      }} title={r.name}>
+                        {r.name.length > 12 ? r.name.substring(0, 10) + '…' : r.name}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontSize: '0.75rem', color: '#64748b', paddingTop: '0.75rem', borderTop: '1px solid #334155' }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #22c55e, #16a34a)', borderRadius: 2 }} />
+                    Low (≤20%)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #fbbf24, #f59e0b)', borderRadius: 2 }} />
+                    Medium (≤40%)
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ width: 12, height: 12, background: 'linear-gradient(180deg, #f87171, #dc2626)', borderRadius: 2 }} />
+                    High (&gt;40%)
+                  </span>
+                </div>
+                <span>Note: Lower is better</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* R² vs MAPE Scatter Plot */}
+      {rows.filter(r => typeof r.r_squared === 'number' && typeof r.mape === 'number').length > 0 && (
+        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, border: '1px solid #334155', marginBottom: '1.5rem' }}>
+          <h3 style={{ color: '#f1f5f9', margin: '0 0 1rem 0', fontSize: '1.125rem' }}>Model Performance: R² vs MAPE</h3>
+          <div style={{ position: 'relative', height: 300, padding: '1rem' }}>
+            {/* Y-axis labels */}
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 40, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8' }}>
+              <span>100%</span>
+              <span>75%</span>
+              <span>50%</span>
+              <span>25%</span>
+              <span>0%</span>
+            </div>
+            
+            {/* Chart area */}
+            <div style={{ marginLeft: 45, marginBottom: 30, height: '100%', position: 'relative', borderLeft: '1px solid #334155', borderBottom: '1px solid #334155' }}>
+              {/* Grid lines */}
+              {[0, 25, 50, 75, 100].map(y => (
+                <div key={y} style={{ position: 'absolute', left: 0, right: 0, bottom: `${y}%`, borderTop: '1px dashed #1e293b' }} />
+              ))}
+              
+              {/* Data points */}
+              {rows.filter(r => typeof r.r_squared === 'number' && typeof r.mape === 'number').map((r, i) => {
+                const maxMape = Math.max(...rows.filter(r => typeof r.mape === 'number').map(r => r.mape!))
+                const x = (r.r_squared! / 1) * 100
+                const y = 100 - ((r.mape! / maxMape) * 100)
+                
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      position: 'absolute',
+                      left: `${x}%`,
+                      bottom: `${y}%`,
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      background: r.is_active ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #60a5fa, #2563eb)',
+                      border: '2px solid #0f172a',
+                      transform: 'translate(-50%, 50%)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                    }}
+                    title={`${r.name}\nR²: ${r.r_squared!.toFixed(4)}\nMAPE: ${r.mape!.toFixed(2)}%\n${r.is_active ? 'Active' : 'Inactive'}`}
+                  />
+                )
+              })}
+            </div>
+            
+            {/* X-axis label */}
+            <div style={{ position: 'absolute', left: 45, right: 0, bottom: 0, height: 25, display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', paddingTop: '0.25rem' }}>
+              <span>0.0</span>
+              <span>0.25</span>
+              <span>0.5</span>
+              <span>0.75</span>
+              <span>1.0</span>
+            </div>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center', marginTop: '0.5rem' }}>
+            R² Score (horizontal) vs MAPE % (vertical)
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', marginTop: '0.75rem', fontSize: '0.75rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#cbd5e1' }}>
+              <div style={{ width: 12, height: 12, background: 'linear-gradient(135deg, #22c55e, #16a34a)', borderRadius: '50%', border: '2px solid #0f172a' }} />
+              Active Models
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#cbd5e1' }}>
+              <div style={{ width: 12, height: 12, background: 'linear-gradient(135deg, #60a5fa, #2563eb)', borderRadius: '50%', border: '2px solid #0f172a' }} />
+              Inactive Models
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Mini charts */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -174,65 +414,6 @@ export default function ModelsDashboard() {
           ))}
         </div>
       </div>
-
-      {/* R² Distribution by Type - Show if multiple types exist */}
-      {hasMultipleTypes && r2ByType.length > 0 && (
-        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 8, border: '1px solid #334155', marginBottom: '1.5rem' }}>
-          <h3 style={{ color: '#f1f5f9', margin: '0 0 1rem 0', fontSize: '1.125rem' }}>R² Distribution by Model Type</h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 180, padding: '0.5rem 0' }}>
-            {r2ByType.map((d, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
-                <div 
-                  style={{ 
-                    width: '100%', 
-                    background: d.type === 'ridge_regression' ? 'linear-gradient(180deg, #60a5fa, #2563eb)' : 
-                               d.type === 'hedonic_regression' ? 'linear-gradient(180deg, #22d3ee, #0ea5e9)' : 
-                               'linear-gradient(180deg, #a78bfa, #7c3aed)',
-                    borderRadius: '4px 4px 0 0',
-                    height: `${(d.r2 / maxR2Value) * 100}%`,
-                    minHeight: d.r2 > 0 ? '4px' : '0',
-                    position: 'relative',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={`${d.name}: ${d.r2.toFixed(4)}`}
-                >
-                  <div style={{ 
-                    position: 'absolute', 
-                    top: '-1.25rem', 
-                    left: '50%', 
-                    transform: 'translateX(-50%)', 
-                    fontSize: '0.7rem', 
-                    color: '#94a3b8',
-                    whiteSpace: 'nowrap',
-                    opacity: 0.8
-                  }}>
-                    {d.r2.toFixed(3)}
-                  </div>
-                </div>
-                <div style={{ 
-                  fontSize: '0.7rem', 
-                  color: '#cbd5e1', 
-                  marginTop: '0.5rem', 
-                  textAlign: 'center',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  width: '100%'
-                }} title={d.name}>
-                  {d.name.length > 10 ? d.name.substring(0, 8) + '…' : d.name}
-                </div>
-                <div style={{ fontSize: '0.65rem', color: '#64748b', textAlign: 'center' }}>
-                  {d.type.replace('_', ' ')}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748b', paddingTop: '0.5rem', borderTop: '1px solid #334155' }}>
-            <span>Models by type & R²</span>
-            <span>Max: {maxR2Value.toFixed(4)}</span>
-          </div>
-        </div>
-      )}
 
       {/* Per-Type Breakdown - Show if multiple types */}
       {hasMultipleTypes && (

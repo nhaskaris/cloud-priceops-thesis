@@ -1,12 +1,11 @@
 import './App.css'
 import { useState } from 'react'
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
-import PredictForm from './components/PredictForm'
 import Landing from './components/Landing'
 import ModelsDashboard from './components/ModelsDashboard'
 import ContributeModelForm from './components/ContributeModelForm'
 import Documentation from './components/Documentation'
-import CostOptimizer from './components/CostOptimizer'
+import PricingAnalyzer from './components/PricingAnalyzer'
 
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
@@ -37,8 +36,7 @@ function App() {
 
             <nav className={`main-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
               <Link to="/" onClick={() => setMobileMenuOpen(false)}>Home</Link>
-              <Link to="/predict" onClick={() => setMobileMenuOpen(false)}>Predict</Link>
-              <Link to="/optimizer" onClick={() => setMobileMenuOpen(false)}>Optimizer</Link>
+              <Link to="/analyze" onClick={() => setMobileMenuOpen(false)}>Analyze</Link>
               <Link to="/models" onClick={() => setMobileMenuOpen(false)}>Models</Link>
               <Link to="/contribute" onClick={() => setMobileMenuOpen(false)}>Contribute</Link>
               <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Docs</Link>
@@ -49,8 +47,7 @@ function App() {
         <main>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/predict" element={<PredictForm />} />
-            <Route path="/optimizer" element={<CostOptimizer />} />
+            <Route path="/analyze" element={<PricingAnalyzer />} />
             <Route path="/models" element={<ModelsDashboard />} />
             <Route path="/contribute" element={<ContributeModelForm />} />
             <Route path="/docs" element={<Documentation />} />
