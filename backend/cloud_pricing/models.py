@@ -163,17 +163,86 @@ class NormalizedPricingData(models.Model):
 
 
 class APICallLog(models.Model):
-    """API call logs for monitoring and rate-limiting"""
-    api_endpoint = models.URLField()
-    status_code = models.IntegerField()
+    """API call logs and system performance metrics for KPI tracking"""
+    # API Call Information
+    api_endpoint = models.URLField(blank=True, null=True)
+    status_code = models.IntegerField(null=True, blank=True)
+    
+    # Performance Metrics
+    duration_seconds = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="Time taken to complete the operation in seconds"
+    )
+    records_processed = models.IntegerField(
+        default=0,
+        help_text="Total number of records processed"
+    )
     records_updated = models.IntegerField(default=0)
+    records_inserted = models.IntegerField(default=0, help_text="Number of new records created")
+    records_failed = models.IntegerField(default=0, help_text="Number of records that failed processing")
+    
+    # Data Quality Metrics
+    normalization_success_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Percentage of records successfully normalized (0-100)"
+    )
+    
+    # Throughput Metrics
+    throughput_records_per_second = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Number of records processed per second"
+    )
+    
+    # Additional Context
+    error_message = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Error details if operation failed"
+    )
+    metadata = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Additional metadata about the operation (JSON format)"
+    )
+    
+    # Timestamps
     called_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-called_at']
+        indexes = [
+            models.Index(fields=['called_at']),
+            models.Index(fields=['-called_at']),
+        ]
 
     def __str__(self):
         return f"API call at {self.called_at}"
+    
+    def calculate_metrics(self):
+        """Calculate derived metrics based on recorded data"""
+        if self.records_processed and self.records_processed > 0:
+            # Calculate success rate
+            successful = self.records_processed - self.records_failed
+            self.normalization_success_rate = (successful / self.records_processed) * 100
+            
+            # Calculate throughput
+            if self.duration_seconds and self.duration_seconds > 0:
+                self.throughput_records_per_second = self.records_processed / float(self.duration_seconds)
+        
+        # Calculate duration if completed_at is set
+        if self.completed_at and self.called_at:
+            delta = self.completed_at - self.called_at
+            self.duration_seconds = delta.total_seconds()
 
 
 class RawPricingData(models.Model):

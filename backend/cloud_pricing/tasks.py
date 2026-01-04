@@ -401,8 +401,24 @@ def weekly_pricing_dump_update():
     import tempfile
     import os
 
+    # Initialize KPI tracking
+    start_time = time.time()
+    kpi_log = APICallLog.objects.create(
+        api_endpoint=DATA_DOWNLOAD_URL,
+        called_at=timezone.now()
+    )
+    records_processed = 0
+    records_inserted = 0
+    records_failed = 0
+    error_msg = None
+
     if not INFRACOST_API_KEY:
         logger.error("INFRACOST_API_KEY not set")
+        kpi_log.error_message = "INFRACOST_API_KEY not set"
+        kpi_log.status_code = 500
+        kpi_log.completed_at = timezone.now()
+        kpi_log.duration_seconds = time.time() - start_time
+        kpi_log.save()
         return "FAIL: no API key"
 
     # ---- helpers ----
@@ -571,9 +587,20 @@ def weekly_pricing_dump_update():
         
         try:
             download_url = _get_download_url()
+            kpi_log.status_code = 200
         except ValueError:
+            kpi_log.error_message = "No downloadUrl in response"
+            kpi_log.status_code = 500
+            kpi_log.completed_at = timezone.now()
+            kpi_log.duration_seconds = time.time() - start_time
+            kpi_log.save()
             return "FAIL: no downloadUrl"
         except Exception as e:
+            kpi_log.error_message = f"Metadata error: {str(e)}"
+            kpi_log.status_code = 500
+            kpi_log.completed_at = timezone.now()
+            kpi_log.duration_seconds = time.time() - start_time
+            kpi_log.save()
             return f"FAIL: metadata error {e}"
 
         # Download and save locally
@@ -586,19 +613,29 @@ def weekly_pricing_dump_update():
                         if chunk:
                             f.write(chunk)
             logger.info("Downloaded dump to %s", tmp_path)
-        except Exception:
+        except Exception as e:
             logger.exception("Download error")
             try:
                 os.remove(tmp_path)
             except Exception:
                 pass
+            kpi_log.error_message = f"Download crashed: {str(e)}"
+            kpi_log.status_code = 500
+            kpi_log.completed_at = timezone.now()
+            kpi_log.duration_seconds = time.time() - start_time
+            kpi_log.save()
             return "FAIL: download crashed"
 
     try:
         staging_table = _create_and_load_staging(tmp_path)
     except Exception as e:
         logger.exception("Staging load failed: %s", e)
-        return f"FAIL: staging load error {e}"
+        kpi_log.error_message = f"Staging load failed: {str(e)}"
+        kpi_log.status_code = 500
+        kpi_log.completed_at = timezone.now()
+        kpi_log.duration_seconds = time.time() - start_time
+        kpi_log.save()
+        return f"FAIL: {e}"
     
     # helper for canonical provider
     def canonical_provider_key(vendor_raw):
@@ -745,6 +782,7 @@ def weekly_pricing_dump_update():
         inserted = cur.rowcount
         connection.commit()
         total_saved += inserted
+        records_inserted += inserted
         logger.info("Inserted %d raw pricing data records", inserted)
     
     # 1. Only check updates if normalized table is not empty
@@ -758,6 +796,7 @@ def weekly_pricing_dump_update():
         inserted_count = cur.fetchone()[0]
         connection.commit()
         total_saved += inserted_count
+        records_inserted += inserted_count
         logger.info("Inserted %d new normalized rows", inserted_count)
 
     # 3. Update changed rows
@@ -767,30 +806,41 @@ def weekly_pricing_dump_update():
             updated_count = cur.fetchone()[0]
             connection.commit()
             total_saved += updated_count
+            records_processed += updated_count
             logger.info("Updated %d normalized rows", updated_count)
+
+    # Track total records processed (from staging)
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {staging_table}")
+        staging_count = cur.fetchone()[0]
+        records_processed += staging_count
 
     final_elapsed = time.time() - start_time
     logger.info("✓ SQL processing complete: %d records processed in %.1fs", total_saved, final_elapsed)
 
-    # APICallLog(s)
-    try:
-        APICallLog.objects.create(
-            api_endpoint=DATA_DOWNLOAD_URL,  # the URL you fetched
-            status_code=200,                  # success
-            records_updated=total_saved,      # number of rows upserted
-            called_at=timezone.now()          # timestamp
-        )
-    except Exception:
-        logger.exception("Failed to create APICallLog")
+    # Update APICallLog with final metrics
+    kpi_log.status_code = 200
+    kpi_log.records_processed = records_processed
+    kpi_log.records_inserted = records_inserted
+    kpi_log.records_failed = records_failed
+    kpi_log.completed_at = timezone.now()
+    kpi_log.duration_seconds = time.time() - start_time
+    kpi_log.metadata = {
+        'staging_table': staging_table,
+        'total_saved': total_saved,
+        'processing_time_seconds': final_elapsed
+    }
+    kpi_log.calculate_metrics()
+    kpi_log.save()
 
-    # drop staging
-    # try:
-    #     with connection.cursor() as cur:
-    #         cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
-    #         connection.commit()
-    #     logger.info("Staging table %s dropped successfully", staging_table)
-    # except Exception as e:
-    #     logger.warning("Could not drop staging table %s: %s", staging_table, e)
+    #drop staging
+    try:
+        with connection.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS {staging_table}")
+            connection.commit()
+        logger.info("Staging table %s dropped successfully", staging_table)
+    except Exception as e:
+        logger.warning("Could not drop staging table %s: %s", staging_table, e)
 
     return f"OK: saved {total_saved}"
 
@@ -800,67 +850,81 @@ def export_pricing_data_to_csv(self, filters):
     Queries the database based on client filters, generates a CSV, and saves it,
     using the fields defined in PricingDataSerializer.
     """
+    import time
 
     logger.info(f"Starting CSV export task {self.request.id} with filters: {filters}")
     
-    # Base QuerySet - must match the mandatory filters from the view's get_queryset
-    queryset = NormalizedPricingData.objects.filter(is_active=True, effective_price_per_hour__gt=0)
+    # Initialize KPI tracking
+    start_time = time.time()
+    kpi_log = APICallLog.objects.create(
+        api_endpoint=f"/api/pricing/export/",
+        called_at=timezone.now()
+    )
+    records_processed = 0
+    records_failed = 0
+    error_msg = None
     
-    # Apply Filters (Example handling for 'domain_label' from query params)
-    domain_label_list = filters.get('domain_label')
-    if domain_label_list:
-        queryset = queryset.filter(domain_label=domain_label_list[0])
-
-    min_data_completeness_val = filters.get('min_data_completeness')
-
-    if min_data_completeness_val and str(min_data_completeness_val[0]).lower() == 'true':
-        queryset = queryset.exclude(
-            Q(vcpu_count__isnull=True) | 
-            Q(memory_gb__isnull=True) | 
-            Q(product_family='') |
-            Q(product_family__isnull=True)
-        )
-        logger.info("Filtering for complete data only (min_data_completeness=True)")
-    
-    # Limit to 10k rows in DEV mode
-    if os.getenv("DEV", "").lower() in ("1", "true", "yes"):
-        queryset = queryset[:10000]
-
-    # --- START REFACTORED SECTION ---
-    
-    # 1. Define Fields and Headers using the Serializer
-    
-    # Instantiate the serializer (it doesn't need data, just field definitions)
-    serializer_instance = PricingDataSerializer()
-    
-    fields_to_export = []
-    headers = []
-    
-    serializer_instance = PricingDataSerializer()
-    
-    for field_name, field_object in serializer_instance.fields.items():
-        # 1. Determine the database lookup
-        db_lookup = field_name
-        if isinstance(field_object, serializers.StringRelatedField):
-            db_lookup = f'{field_name}__name'
-        
-        fields_to_export.append(db_lookup)
-        
-        # 2. Keep the header EXACTLY the same as the serializer field name
-        # Do NOT use .title() or .replace('_', ' ')
-        headers.append(field_name) 
-
-    # 3. Fetch data
-    data_values = queryset.values_list(*fields_to_export)
-    
-    # --- END REFACTORED SECTION ---
-    
-    # 3. Save the CSV to a temporary location
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    file_name = f'pricing_export_{timestamp}_{self.request.id}.csv' 
-    temp_path = default_storage.path(file_name) 
-
     try:
+        # Base QuerySet - must match the mandatory filters from the view's get_queryset
+        queryset = NormalizedPricingData.objects.filter(is_active=True, effective_price_per_hour__gt=0)
+        
+        # Apply Filters (Example handling for 'domain_label' from query params)
+        domain_label_list = filters.get('domain_label')
+        if domain_label_list:
+            queryset = queryset.filter(domain_label=domain_label_list[0])
+
+        min_data_completeness_val = filters.get('min_data_completeness')
+
+        if min_data_completeness_val and str(min_data_completeness_val[0]).lower() == 'true':
+            queryset = queryset.exclude(
+                Q(vcpu_count__isnull=True) | 
+                Q(memory_gb__isnull=True) | 
+                Q(product_family='') |
+                Q(product_family__isnull=True)
+            )
+            logger.info("Filtering for complete data only (min_data_completeness=True)")
+        
+        # Limit to 10k rows in DEV mode
+        if os.getenv("DEV", "").lower() in ("1", "true", "yes"):
+            queryset = queryset[:10000]
+
+        # Count records to be processed
+        records_processed = queryset.count()
+
+        # --- START REFACTORED SECTION ---
+        
+        # 1. Define Fields and Headers using the Serializer
+        
+        # Instantiate the serializer (it doesn't need data, just field definitions)
+        serializer_instance = PricingDataSerializer()
+        
+        fields_to_export = []
+        headers = []
+        
+        serializer_instance = PricingDataSerializer()
+        
+        for field_name, field_object in serializer_instance.fields.items():
+            # 1. Determine the database lookup
+            db_lookup = field_name
+            if isinstance(field_object, serializers.StringRelatedField):
+                db_lookup = f'{field_name}__name'
+            
+            fields_to_export.append(db_lookup)
+            
+            # 2. Keep the header EXACTLY the same as the serializer field name
+            # Do NOT use .title() or .replace('_', ' ')
+            headers.append(field_name) 
+
+        # 3. Fetch data
+        data_values = queryset.values_list(*fields_to_export)
+        
+        # --- END REFACTORED SECTION ---
+        
+        # 3. Save the CSV to a temporary location
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        file_name = f'pricing_export_{timestamp}_{self.request.id}.csv' 
+        temp_path = default_storage.path(file_name) 
+
         with open(temp_path, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(headers)
@@ -871,9 +935,39 @@ def export_pricing_data_to_csv(self, filters):
         file_size = default_storage.size(file_name)
         logger.info(f"Task {self.request.id}: CSV file generated successfully at {temp_path}. Size: {file_size}")
 
+        # Update APICallLog with success metrics
+        kpi_log.status_code = 200
+        kpi_log.records_processed = records_processed
+        kpi_log.records_inserted = 0  # No insertions for CSV export
+        kpi_log.records_failed = records_failed
+        kpi_log.completed_at = timezone.now()
+        kpi_log.duration_seconds = time.time() - start_time
+        kpi_log.metadata = {
+            'file_name': file_name,
+            'file_size': file_size,
+            'filters': filters,
+            'task_id': self.request.id
+        }
+        kpi_log.calculate_metrics()
+        kpi_log.save()
+
         # 4. Return the result path
         return {'file_name': file_name, 'file_size': file_size}
     
     except Exception as e:
         logger.error(f"Task {self.request.id} failed during CSV generation: {e}")
+        
+        # Update APICallLog with error
+        kpi_log.status_code = 500
+        kpi_log.error_message = str(e)
+        kpi_log.records_processed = records_processed
+        kpi_log.records_failed = records_failed
+        kpi_log.completed_at = timezone.now()
+        kpi_log.duration_seconds = time.time() - start_time
+        kpi_log.metadata = {
+            'filters': filters,
+            'task_id': self.request.id,
+            'error': str(e)
+        }
+        kpi_log.save()
         raise
