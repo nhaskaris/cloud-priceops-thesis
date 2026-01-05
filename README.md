@@ -1,39 +1,54 @@
-# Cloud PriceOps
+# Cloud PriceOps - Technical Documentation
 
-A cloud pricing analytics and Total Cost of Ownership (TCO) estimation platform with machine learning-powered price predictions for AWS, Azure, and GCP.
+A full-stack cloud pricing analytics platform with multi-provider data normalization, ML model registry, and price prediction APIs.
 
-## Overview
+## Architecture Overview
 
-Cloud PriceOps is a full-stack application that ingests, normalizes, and analyzes cloud pricing data from multiple providers using the Infracost API. The platform features a Django REST backend with asynchronous Celery task processing, PostgreSQL database, and a React + TypeScript frontend for ML-powered price prediction.
+```
+┌─────────────────┐
+│   Frontend      │
+│   (React/Vite)  │
+└────────┬────────┘
+         │ HTTP
+    ┌────▼─────┐
+    │   Nginx   │
+    │ (Reverse  │
+    │  Proxy)   │
+    └────┬─────┘
+         │ Port 80 → 3000 (Frontend)
+         │ Port 80 → 8000 (Backend)
+    ┌────▼──────────────┐
+    │   Backend (Django)  │
+    │   + Gunicorn       │
+    └────┬───────────────┘
+         │
+    ┌────┴─────────────────────────┐
+    │                              │
+┌───▼────┐  ┌────────┐  ┌─────────▼─┐  ┌──────────┐
+│PostgreSQL│  │ Redis  │  │  Celery   │  │  Flower  │
+│         │  │        │  │  Worker   │  │ (Monitoring)
+└─────────┘  └────────┘  └───────────┘  └──────────┘
+```
 
-### Key Features
-
-- **Multi-Cloud Price Normalization** - Automated ingestion and normalization of pricing data from AWS, Azure, and GCP
-- **ML-Powered Price Prediction** - Interactive web interface for predicting cloud resource costs using registered ML models
-- **Model Registry** - Upload, version, and manage custom pricing prediction models
-- **Data Export Pipeline** - Asynchronous CSV export with Nginx X-Accel-Redirect for efficient large file delivery
-- **Domain Classification** - Automatic service classification (IaaS, PaaS, SaaS, Database, Storage, ML, Utility)
-- **API Documentation** - Comprehensive OpenAPI/Swagger documentation via DRF Spectacular
-
-## Prerequisites
-
-- Docker and Docker Compose
-- Python 3.10+ (for local development)
-- Node.js 22+ (for local development)
-- Infracost API Key ([Get one here](https://www.infracost.io/docs/#2-get-api-key))
+**Components:**
+- **Frontend**: Vite + React/TypeScript (port 3000)
+- **Nginx**: Reverse proxy (port 80)
+- **Backend**: Django + Gunicorn (port 8000)
+- **PostgreSQL**: Primary data store (port 5432)
+- **Redis**: Message broker & cache (port 6379)
+- **Celery**: Async task queue for data import and ML predictions
+- **Flower**: Celery task monitoring (port 5555)
 
 ## Quick Start
 
-### 1. Clone the Repository
+### Prerequisites
 
-```bash
-git clone <repository-url>
-cd cloud-priceops-thesis
-```
+- Docker & Docker Compose
+- Python 3.10+ (local development)
+- Node.js 22+ (local development)
+- Infracost API Key ([Get here](https://www.infracost.io/docs/#2-get-api-key))
 
-### 2. Environment Configuration
-
-Create environment files from templates:
+### 1. Environment Setup
 
 ```bash
 # Root directory
@@ -42,462 +57,386 @@ cp .env.template .env
 # Backend
 cp backend/.env.template backend/.env
 
-# Frontend
+# Frontend  
 cp frontend/.env.template frontend/.env
 ```
 
 **Required Environment Variables:**
 
 ```bash
-# backend/.env
-SECRET_KEY=your-django-secret-key
-INFRACOST_API_KEY=your-infracost-api-key
+# .env (root)
 POSTGRES_DB=cloud_pricing_db
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your-secure-password
-DATABASE_URL=postgresql://postgres:your-secure-password@db:5432/cloud_pricing_db
+POSTGRES_PASSWORD=<secure-password>
 REDIS_URL=redis://redis:6379/0
 
+# backend/.env
+SECRET_KEY=<django-secret>
+DEBUG=False
+INFRACOST_API_KEY=<api-key>
+DATABASE_URL=postgresql://postgres:<password>@db:5432/cloud_pricing_db
+
 # frontend/.env
-VITE_APP_BACKEND_URL=http://localhost:8000
+VITE_APP_BACKEND_URL=http://localhost
 ```
 
-### 3. Launch with Docker Compose
+### 2. Launch Services
 
 ```bash
 docker compose up -d --build
 ```
 
-This will start:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost
-- **Swagger UI**: http://localhost/api/schema/swagger-ui/
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
+**Access Points:**
+- Frontend: http://localhost
+- API (Swagger): http://localhost/api/schema/swagger-ui/
+- Flower (Celery): http://localhost:5555
 
-### 4. Initialize Database
+### 3. Initialize Database
 
 ```bash
 # Run migrations
 docker compose exec backend python manage.py migrate
-
-# Create initial cloud provider data
-docker compose exec backend python manage.py init_cloud_data
 ```
 
-### 5. Import Pricing Data
-
-Trigger the weekly pricing dump import (initial run may take 10-15 minutes):
+### 4. Import Pricing Data
 
 ```bash
+# Trigger initial pricing import (10-15 min)
 docker compose exec backend python manage.py shell
 >>> from cloud_pricing.tasks import weekly_pricing_dump_update
 >>> weekly_pricing_dump_update.delay()
 ```
 
-Or via Django admin/Celery Beat (configured for weekly automatic updates).
+Subsequent updates run automatically via Celery Beat (weekly on Monday 2 AM).
 
-## Data Flow
+## Core Services
 
-### 1. Pricing Data Ingestion
+### Backend (Django + DRF)
 
-```python
-# backend/cloud_pricing/tasks.py
+**Path:** `/backend/`
 
-@shared_task
-def weekly_pricing_dump_update():
-    """
-    1. Downloads Infracost pricing dump (CSV.GZ, ~300MB compressed)
-    2. Creates PostgreSQL staging table
-    3. Loads data via COPY or batch insert
-    4. Normalizes provider/service/region/pricing models
-    5. Parses JSON pricing arrays and inserts to RawPricingData
-    6. Transforms and inserts to NormalizedPricingData with domain classification
-    """
-```
+**Key Apps:**
+- `cloud_pricing` - Pricing data models, ingestion, normalization
+- `model_registry` - ML engine registry, prediction endpoints
+- `core` - Django settings, Celery config, URL routing
 
-**Key Normalization Steps:**
-- Unified pricing model detection (On-Demand, Spot, Reserved, etc.)
-- Term length extraction from multiple fields
-- Price-per-hour conversion from various units (Month, GB, Count, etc.)
-- Domain label classification via PostgreSQL function (`classify_domain()`)
-
-### 2. Domain Classification
-
-Automatic service categorization using SQL function:
-
-```sql
--- backend/cloud_pricing/sql/generate_domain_label.sql
-
-CREATE OR REPLACE FUNCTION classify_domain(
-    service_name TEXT,
-    instance_type TEXT
-) RETURNS TEXT AS $$
-    -- Returns: 'iaas', 'paas', 'saas', 'database', 'storage', 'ml', 'utility', 'other'
-```
-
-**Categories:**
-- **IaaS**: EC2, Virtual Machines, Compute Engine
-- **PaaS**: App Service, Cloud Run, Lambda
-- **SaaS**: GitHub AE, Power BI
-- **Database**: RDS, Cloud SQL, Cosmos DB
-- **Storage**: S3, Blob Storage, Cloud Storage
-- **ML/AI**: SageMaker, AI Platform
-- **Utility**: Bandwidth, Data Transfer
-
-### 3. ML Model Registry
-
-Train and register hedonic regression models for price prediction:
-
-```python
-# examples/hedonic/model.py
-
-# 1. Load and clean pricing export
-df = pd.read_csv("pricing_export.csv")
-
-# 2. Feature engineering
-# - Log-transform continuous features (vCPU, memory, term length)
-# - One-hot encode categorical features (provider, region, OS, etc.)
-
-# 3. Feature selection via Lasso
-lasso = LassoCV(cv=5).fit(X_train, Y_train)
-selected_features = X_train.columns[lasso.coef_ != 0]
-
-# 4. Train OLS with robust standard errors
-model = sm.OLS(Y_final, X_ols).fit(cov_type='HC3')
-
-# 5. Register via API
-files = {
-    "model_binary": open("hedonic_model.pkl", "rb"),
-    "encoder_binary": open("encoder.pkl", "rb")
-}
-requests.post("http://localhost:8000/engines/", data=payload, files=files)
-```
-
-### 4. Price Prediction Flow
-
-```
-Frontend → Backend: POST /engines/predict/AWS_Compute_Pricing
-Backend → Celery: compute_price_prediction.delay(engine_id, specs)
-Celery: Load model & encoder binaries
-Celery: Transform features (log-scale, encode)
-Celery: Predict log(price), exponentiate
-Celery → Backend: Return predicted price
-Backend → Frontend: {"predicted_price": 0.052}
-```
-
-## API Endpoints
-
-### Pricing Data
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/normalized-pricing-data/` | GET | List normalized pricing records |
-| `/normalized-pricing-data/export/` | POST | Queue CSV export task |
-| `/normalized-pricing-data/export-status/` | GET | Check export status / download file |
-
-**Export Example:**
-
+**Running Locally:**
 ```bash
-# 1. Start export (with optional domain filter)
-curl -X POST "http://localhost:8000/normalized-pricing-data/export/?domain_label=iaas&min_data_completeness=true"
-# Response: {"task_id": "550e8400-e29b-41d4-a716-446655440000", "status": "Task queued"}
-
-# 2. Check status
-curl "http://localhost:8000/normalized-pricing-data/export-status/?task_id=550e8400-e29b-41d4-a716-446655440000"
-
-# 3. Download file (when status=SUCCESS)
-curl "http://localhost:8000/normalized-pricing-data/export-status/?task_id=550e8400-e29b-41d4-a716-446655440000&download=true" -o export.csv
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
 ```
 
-### ML Engine
+**API Endpoints:**
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/engines/` | GET | List registered ML engines |
-| `/engines/` | POST | Register new model (multipart/form-data) |
-| `/engines/summary/` | GET | List all models (name, type, version, metrics only) |
-| `/engines/types/` | GET | Get available model types and best model per type |
-| `/engines/predict-by-type/{model_type}/` | POST | Predict using best model of a type |
-| `/engines/predict/<engine_name>/` | POST | Get price prediction |
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/normalized-pricing-data/` | GET | List pricing records |
+| `/api/normalized-pricing-data/export/` | POST | Queue CSV export |
+| `/api/normalized-pricing-data/export-status/` | GET | Check/download export |
+| `/api/engines/` | GET, POST | List/register ML models |
+| `/api/engines/summary/` | GET | All models (metadata only) |
+| `/api/engines/types/` | GET | Available model types + best model per type |
+| `/api/engines/predict-by-type/{type}/` | POST | Predict using best model of type |
+| `/api/schema/swagger-ui/` | GET | OpenAPI documentation |
 
-**Prediction Example:**
-
+**Example Prediction:**
 ```bash
-curl -X POST http://localhost:8000/engines/predict/AWS_Compute_Pricing/ \
+curl -X POST http://localhost:8000/api/engines/predict-by-type/regression/ \
   -H "Content-Type: application/json" \
   -d '{
     "vcpu": 4,
     "memory": 16,
     "region": "us-east-1",
-    "os": "Linux",
-    "tenancy": "shared"
+    "operating_system": "Linux"
   }'
-
-# Response: {"predicted_price": 0.0524}
 ```
 
-## Frontend - ML Price Prediction Interface
+### Frontend (React + Vite)
 
-### Overview
+**Path:** `/frontend/`
 
-The frontend is a clean, modern React + TypeScript application built with Vite that provides an intuitive interface for ML-powered cloud price predictions. Users select a model **type** (e.g., "Regression") and the system automatically chooses the best performing model of that type based on R² score and MAPE metrics.
+**Components:**
+- `PredictionForm` - vCPU, memory, region input
+- `ModelsDashboard` - Model comparison & metrics
+- `CostOptimizer` - Price prediction & cost breakdowns
+- `Documentation` - API usage guide
 
-### Features
-
-- **Model Type Selection**: Choose from available model types (Regression, etc.) - system auto-selects best model
-- **Smart Model Selection**: Backend automatically uses the best performing model for the selected type
-- **Smart Form Validation**: Required fields (vCPU, Memory) with optional parameters for refined predictions
-- **Real-time Predictions**: Instant price estimates with monthly and yearly cost projections
-- **Performance Metrics**: Live display of best model's R² and MAPE scores
-- **Clean UI/UX**: Professional design with clear visual hierarchy and responsive layout
-
-#### New Pages & Navigation
-- Home: Overview with quick links for "Predict" and "Contribute"
-- Predict: Form-driven ML price estimation
-- Models: Dashboard of all models via `/engines/summary/`
-- Contribute: Upload/register models to `/engines/` (multipart)
-
-### Usage
-
-1. **Navigate to** http://localhost:3000
-
-2. **Configure your prediction:**
-   - **Select Model Type:**
-     - Choose prediction model type (e.g., "Regression")
-     - System displays best model and its performance metrics
-   
-   - **Required Fields:**
-     - **vCPU** - Number of virtual CPUs (e.g., 4)
-     - **Memory (GB)** - RAM in gigabytes (e.g., 16)
-   
-   - **Optional Fields:**
-     - **Region** - Cloud region code (e.g., us-east-1, eastus)
-     - **Operating System** - Linux, Windows, RHEL, SUSE
-     - **Tenancy** - Shared, Dedicated, or Dedicated Host
-     - **Term Length** - Contract length in months for reserved instances
-     - **Payment Options** - All Upfront, Partial Upfront, No Upfront
-     - **Additional Parameters** - Custom key-value pairs for specialized features
-
-3. **Get prediction results:**
-   - Predicted hourly price ($/hour)
-   - Monthly cost estimate (price × 730 hours)
-   - Yearly cost estimate (price × 8,760 hours)
-   - Engine version and metadata
-
-### Example Workflow
-
-**Input:**
-```
-Model Type: Regression
-vCPU: 4
-Memory: 16 GB
-Region: us-east-1 (optional)
-OS: Linux (optional)
-Tenancy: Shared (optional)
-```
-
-**Output:**
-```
-┌──────────────────────────────────────────────────┐
-│  Predicted Price: $0.052400 USD / hour           │
-│  Monthly Cost: $38.25 USD                        │
-│  Yearly Cost: $459.00 USD                        │
-│  Model Used: AWS_Compute_Pricing v2025.12.18.06  │
-└──────────────────────────────────────────────────┘
-```
-
-### Model Information Display
-
-The interface shows live model type and best model performance metrics:
-- **Type**: Regression
-- **Available Models**: 3
-- **Best Model**: AWS_Compute_Pricing v2025.12.18.06
-- **R² Score**: 0.9175 (91.75% variance explained)
-- **MAPE**: 41.72% (mean absolute percentage error)
-- **Log Features**: term_length_years, vcpu_count, memory_gb
-- **Categorical Features**: provider, region, operating_system, tenancy, etc.
-
-### API Integration
-
-Frontend communicates with backend via REST API:
-
-```javascript
-POST /engines/predict-by-type/{model_type}/
-Content-Type: application/json
-
-{
-  "vcpu_count": 4,
-  "memory_gb": 16,
-  "region": "us-east-1",
-  "operating_system": "Linux",
-  "tenancy": "shared",
-  "term_length_years": 1
-}
-```
-
-**Response:**
-```json
-{
-  "engine_version": "AWS_Compute_Pricing-v2025.12.18.06",
-  "predicted_price": 0.052400,
-  "currency": "USD"
-}
-```
-
-## Project Structure
-
-```
-cloud-priceops-thesis/
-├── backend/
-│   ├── cloud_pricing/          # Main pricing app
-│   │   ├── api/                # REST API views & serializers
-│   │   ├── management/         # Django commands (init_cloud_data)
-│   │   ├── migrations/         # Database migrations
-│   │   ├── sql/                # PostgreSQL functions (domain classification)
-│   │   ├── models.py           # ORM models (NormalizedPricingData, etc.)
-│   │   └── tasks.py            # Celery tasks (ingestion, export)
-│   ├── model_registry/         # ML model management
-│   │   ├── api/                # ML engine API
-│   │   ├── models.py           # MLEngine, ModelCoefficient
-│   │   └── tasks.py            # Prediction workers
-│   ├── core/                   # Django settings & config
-│   ├── manage.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── components/         # React components (ComparisonChart)
-│   │   ├── App.tsx             # Main TCO estimation interface
-│   │   └── main.tsx
-│   ├── package.json
-│   └── Dockerfile
-├── nginx/                      # Reverse proxy configuration
-├── examples/
-│   └── hedonic/                # ML model training scripts
-│       └── model.py            # Hedonic regression example
-├── docker-compose.yml
-└── README.md
-```
-
-## Development
-
-### Local Backend Development
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Run migrations
-python manage.py migrate
-
-# Create superuser
-python manage.py createsuperuser
-
-# Start dev server
-python manage.py runserver
-
-# Start Celery worker (separate terminal)
-celery -A core worker -l info
-```
-
-### Local Frontend Development
-
+**Running Locally:**
 ```bash
 cd frontend
 npm install
 npm run dev  # Starts on http://localhost:5173
 ```
 
-### Running Tests
-
+**Build:**
 ```bash
-# Backend
-docker-compose exec backend python manage.py test
-
-# Frontend
-docker-compose exec frontend npm test
+npm run build  # Outputs to /dist
 ```
 
-## Database Schema
+### Database (PostgreSQL)
 
-### Key Models
+**Key Tables:**
+- `normalized_pricing_data` - Main pricing table (~10M+ rows)
+- `raw_pricing_data` - Raw Infracost JSON payloads
+- `cloud_providers`, `cloud_services`, `regions` - Reference data
+- `ml_engine` - Registered models & coefficients
+- `api_call_logs` - Request metrics
 
-**NormalizedPricingData**
-- Normalized pricing records from all providers
-- Foreign keys: `CloudProvider`, `CloudService`, `Region`, `PricingModel`, `Currency`
-- Price fields: `price_per_unit`, `effective_price_per_hour`, `price_unit`
-- Metadata: `vcpu_count`, `memory_gb`, `storage_type`, `domain_label`
-- Lifecycle: `effective_date`, `is_active`, `created_at`, `updated_at`
-
-**RawPricingData**
-- Stores raw JSON payloads from Infracost
-- Unique constraint on `product_hash` for deduplication
-- Linked to `NormalizedPricingData` via `raw_entry` FK
-
-**MLEngine**
-- Stores trained model binaries and metadata
-- Fields: `name`, `version`, `model_type`, `feature_names`, `r_squared`, `mape`
-- One active "Champion" model per name
-
-### Indexes
-
+**Critical Indexes:**
 ```sql
--- Performance-critical indexes
+CREATE INDEX idx_npd_matching ON normalized_pricing_data 
+  (is_active, region_id, operating_system, vcpu_count, memory_gb, effective_date);
 CREATE INDEX idx_npd_active_effective ON normalized_pricing_data (is_active, effective_date);
 CREATE INDEX idx_npd_prov_serv_reg ON normalized_pricing_data (provider_id, service_id, region_id);
-CREATE INDEX idx_price_positive ON normalized_pricing_data (price_per_unit) WHERE price_per_unit > 0;
-CREATE INDEX idx_npd_domain_label ON normalized_pricing_data (domain_label);
 ```
 
-## Advanced Features
-
-### X-Accel-Redirect Export
-
-Large CSV exports (>300MB) use Nginx's X-Accel-Redirect for efficient streaming:
-
-```python
-# backend/cloud_pricing/api/views.py
-
-response = HttpResponse()
-response['Content-Type'] = 'text/csv'
-response['Content-Disposition'] = f'attachment; filename="{file_name}"'
-response['Content-Length'] = file_size
-response['X-Accel-Redirect'] = f'/protected/exports/{file_name}'
-return response
+**Connect Locally:**
+```bash
+psql -h localhost -U postgres -d cloud_pricing_db
 ```
 
-### Celery Periodic Tasks
+### Task Queue (Celery + Redis)
 
-```python
-# backend/core/celery.py
+**Path:** `/backend/core/celery.py`
 
-app.conf.beat_schedule = {
-    'weekly-pricing-update': {
-        'task': 'cloud_pricing.tasks.weekly_pricing_dump_update',
-        'schedule': crontab(day_of_week=1, hour=2, minute=0),  # Every Monday at 2 AM
-    },
-}
+**Key Tasks:**
+- `weekly_pricing_dump_update()` - Downloads Infracost dump, normalizes, imports
+- `export_normalized_pricing()` - Generates CSV export
+- `compute_price_prediction()` - ML inference via registered models
+- `compute_tco_comparison()` - TCO analysis across cloud providers
+
+**Monitor Tasks:**
+- Flower UI: http://localhost:5555
+- Terminal: `docker compose logs celery`
+
+**Run Task Manually:**
+```bash
+docker compose exec backend celery -A core call cloud_pricing.tasks.weekly_pricing_dump_update
 ```
+
+### Reverse Proxy (Nginx)
+
+**Config:** `/nginx/nginx.conf`
+
+**Routes:**
+- `GET /` → Frontend (port 3000)
+- `POST /api/` → Backend (port 8000)
+- `/exports/` → X-Accel-Redirect protected static files
+
+**Edit Config:**
+```bash
+# Make changes to /nginx/nginx.conf
+docker compose exec nginx nginx -s reload
+```
+
+## Data Pipeline
+
+### 1. Pricing Data Import
+
+```
+Infracost API (CSV.GZ, ~300MB)
+    ↓
+weekly_pricing_dump_update() [Celery Task]
+    ├─ Download & extract
+    ├─ Create staging table
+    ├─ COPY/batch insert to raw_pricing_data
+    ├─ Call normalize_price_unit() [PL/pgSQL]
+    ├─ Call classify_domain() [PL/pgSQL]
+    └─ INSERT to normalized_pricing_data
+    ↓
+NormalizedPricingData table
+```
+
+**Normalization Logic:**
+- Provider/service lookup from JSON
+- Region name standardization
+- Price unit conversion (Month → Hour, GB-Second → Hour, etc.)
+- Effective price per hour calculation
+- Domain classification (IaaS, PaaS, Database, etc.)
+
+**PL/pgSQL Functions:**
+- `normalize_price_unit(raw_unit TEXT)` → JSONB with amount, base, period
+- `classify_domain(service_name, instance_type)` → domain_label
+
+### 2. ML Model Registration
+
+**Workflow:**
+```
+Train Model (Local)
+    ↓
+Serialize to .pkl
+    ├─ model_binary (scikit-learn OLS/Ridge)
+    └─ encoder_binary (OneHotEncoder)
+    ↓
+POST /api/engines/ (multipart/form-data)
+    ├─ model_binary
+    ├─ encoder_binary
+    ├─ name, version, model_type
+    └─ feature_names, r_squared, mape
+    ↓
+MLEngine model stored in DB
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/engines/ \
+  -F "name=AWS_Compute_Pricing" \
+  -F "version=2025.12.18" \
+  -F "model_type=hedonic_regression" \
+  -F "r_squared=0.9175" \
+  -F "mape=41.72" \
+  -F "feature_names=[\"log_vcpu\", \"log_memory\", ...]" \
+  -F "model_binary=@model.pkl" \
+  -F "encoder_binary=@encoder.pkl"
+```
+
+### 3. Price Prediction
+
+```
+Frontend POST /api/engines/predict-by-type/{type}/
+    ├─ Input: vcpu, memory, region, OS, tenancy
+    ├─ Backend selects best model of type (by R²)
+    └─ Queues compute_price_prediction task
+    ↓
+Celery Worker
+    ├─ Load model binary from DB
+    ├─ Load encoder binary from DB
+    ├─ Transform input features (log-scale, encode)
+    ├─ Call model.predict()
+    └─ Exponentiate log(price) → price
+    ↓
+Return {predicted_price, monthly_cost, yearly_cost}
+```
+
+### 4. CSV Export
+
+```
+Frontend POST /api/normalized-pricing-data/export/
+    ├─ Input: domain_label, filters, min_data_completeness
+    └─ Queues export_normalized_pricing task
+    ↓
+Celery Worker
+    ├─ Query filtered records
+    ├─ Write to CSV (streaming for large exports)
+    ├─ GZIP compress
+    └─ Store in /backend/media/exports/
+    ↓
+Frontend GET /api/normalized-pricing-data/export-status/
+    ├─ Check task status
+    ├─ Return download URL
+    └─ Browser downloads via X-Accel-Redirect
+```
+
+## Development Workflow
+
+### Local Development (Without Docker)
+
+**Backend:**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL=postgresql://postgres:password@localhost:5432/cloud_pricing_db
+python manage.py migrate
+python manage.py runserver
+
+# Separate terminal
+celery -A core worker -l info
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Database Migrations
+
+```bash
+# Create migration
+docker compose exec backend python manage.py makemigrations
+
+# Apply migration
+docker compose exec backend python manage.py migrate
+
+# Rollback
+docker compose exec backend python manage.py migrate cloud_pricing 0001
+```
+
+### Adding Custom Models
+
+See `/examples/hedonic/model.py` for a complete example.
+
+**Steps:**
+1. Export pricing data via frontend export tool
+2. Train model locally using scikit-learn
+3. Pickle model + encoder
+4. Register via `POST /api/engines/`
 
 ## Troubleshooting
 
-### Database Connection Issues
-
+### Reset Database
 ```bash
-# Check if PostgreSQL is running
-docker-compose ps db
-
-# View logs
-docker-compose logs db
-
-# Reset database (WARNING: destroys data)
-docker-compose down -v
-docker-compose up -d db
-docker-compose exec backend python manage.py migrate
+docker compose down -v
+docker compose up -d db
+docker compose exec backend python manage.py migrate
 ```
+
+### View Logs
+```bash
+docker compose logs -f backend    # Django + Gunicorn
+docker compose logs -f celery     # Task queue
+docker compose logs -f nginx      # Reverse proxy
+docker compose logs -f db         # PostgreSQL
+```
+
+### Django Shell
+```bash
+docker compose exec backend python manage.py shell
+>>> from cloud_pricing.models import NormalizedPricingData
+>>> NormalizedPricingData.objects.count()
+```
+
+### Clear Cache
+```bash
+docker compose exec redis redis-cli FLUSHALL
+```
+
+### Rebuild Containers
+```bash
+docker compose down
+docker compose up -d --build
+```
+
+## Deployment Considerations
+
+### Performance
+- Nginx caches static assets and serves as reverse proxy
+- PostgreSQL indexes on frequently filtered columns
+- Celery runs async tasks to avoid blocking requests
+- X-Accel-Redirect streams large exports efficiently
+
+### Security
+- Django `SECRET_KEY` must be unique per environment
+- Database credentials in `.env` (never commit)
+- Nginx disables version disclosure (`server_tokens off`)
+- CORS configured for cross-domain requests
+
+### Monitoring
+- Flower for task queue health: http://localhost:5555
+- PostgreSQL slow query log in `docker-compose.yml`
+- Django request logging to stdout
+
+### Scaling
+- Horizontal: Add more Celery workers (`docker compose up -d --scale celery=3`)
+- Vertical: Increase Gunicorn workers in `backend/gunicorn.conf.py`
+- Database: Consider read replicas for analytics queries
 
 ### Celery Tasks Not Running
 
