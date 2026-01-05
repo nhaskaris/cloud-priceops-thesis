@@ -32,6 +32,8 @@ class MLEngineViewSet(viewsets.ModelViewSet):
                            'iaas' filters by domain_label containing 'iaas'.
             mape: Model MAPE (for reference, not used in filtering)
         """
+        import math
+        
         queryset = NormalizedPricingData.objects.filter(
             is_active=True,
             effective_price_per_hour__gt=0  # Must have hourly pricing
@@ -49,50 +51,54 @@ class MLEngineViewSet(viewsets.ModelViewSet):
         if os and os.strip():
             queryset = queryset.filter(operating_system__icontains=os)
         
-        # Filter by vCPU and memory (allow some flexibility)
+        # Euclidean distance matching with normalized dimensions
+        # Weights for each dimension (vCPU, Memory, Price)
+        W_VCPU = 0.3      # 30% weight on vCPU proximity
+        W_MEMORY = 0.3    # 30% weight on memory proximity
+        W_PRICE = 0.4     # 40% weight on price-to-performance ratio
+        
         results = []
         for record in queryset:
-            # Calculate matching score
-            score = 0
-            penalties = 0
+            # Skip records with missing critical fields
+            if not record.vcpu_count or not record.memory_gb:
+                continue
             
-            # vCPU matching (prefer exact or close match)
-            if record.vcpu_count:
-                vcpu_diff = abs(record.vcpu_count - vcpu)
-                if vcpu_diff == 0:
-                    score += 100
-                elif vcpu_diff <= 2:
-                    score += 50 - (vcpu_diff * 10)
-                elif vcpu_diff <= 4:
-                    score += 20 - (vcpu_diff * 2)
-                else:
-                    penalties += vcpu_diff * 2
-            else:
-                penalties += 10  # Penalize if no vCPU info
+            vcpu_val = record.vcpu_count
+            memory_val = float(record.memory_gb)
+            price_val = float(record.effective_price_per_hour)
             
-            # Memory matching (prefer exact or close match)
-            if record.memory_gb:
-                memory_diff = abs(float(record.memory_gb) - memory)
-                if memory_diff == 0:
-                    score += 100
-                elif memory_diff <= 4:
-                    score += 50 - (memory_diff * 10)
-                elif memory_diff <= 8:
-                    score += 20 - (memory_diff * 2)
-                else:
-                    penalties += memory_diff
-            else:
-                penalties += 10  # Penalize if no memory info
+            # Normalized differences (prevent unit bias)
+            # vCPU difference normalized by target vCPU
+            vcpu_diff_norm = abs(vcpu_val - vcpu) / max(vcpu, 1)
             
-            final_score = score - penalties
+            # Memory difference normalized by target memory
+            memory_diff_norm = abs(memory_val - memory) / max(memory, 1)
             
-            # Include all results (no minimum score threshold)
+            # Price difference normalized by actual price
+            # Higher price penalty if user specs are overprovisioned
+            # Lower penalty if slightly more expensive but much better performance
+            price_ratio = price_val / (vcpu_val * memory_val + 0.1)  # Performance per dollar
+            target_price_ratio = 0.01  # Baseline expectation (~$0.01 per vCPU·GB·hour)
+            price_diff_norm = abs(price_ratio - target_price_ratio) / max(target_price_ratio, 0.001)
+            
+            # Weighted Euclidean distance (lower is better)
+            euclidean_distance = math.sqrt(
+                (W_VCPU * vcpu_diff_norm) ** 2 +
+                (W_MEMORY * memory_diff_norm) ** 2 +
+                (W_PRICE * price_diff_norm) ** 2
+            )
+            
+            # Convert distance to score (0-100 scale, inverted so lower distance = higher score)
+            # Use exponential decay so perfect matches get high scores
+            resource_fit_score = 100 * math.exp(-euclidean_distance)
+            
             results.append({
-                'score': final_score,
-                'price': float(record.effective_price_per_hour),
+                'score': resource_fit_score,
+                'euclidean_distance': euclidean_distance,
+                'price': price_val,
                 'instance_type': record.instance_type,
-                'vcpu': record.vcpu_count,
-                'memory': float(record.memory_gb) if record.memory_gb else None,
+                'vcpu': vcpu_val,
+                'memory': memory_val,
                 'region': record.region.name if record.region else None,
                 'provider': record.provider.name if record.provider else None,
                 'service': record.service.name if record.service else None,
@@ -104,10 +110,10 @@ class MLEngineViewSet(viewsets.ModelViewSet):
                 'db_id': str(record.id),
             })
         
-        # Sort by score (best matches first)
+        # Sort by resource fit score (best matches first)
         results = sorted(results, key=lambda x: x['score'], reverse=True)
         
-        # Return top 5 matches (increased from 3)
+        # Return top 5 matches
         return results[:5]
 
     @extend_schema(
