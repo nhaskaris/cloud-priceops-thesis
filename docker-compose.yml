@@ -16,6 +16,16 @@ services:
       - media_data:/app/media
     restart: always
   
+  front:
+    container_name: front
+    restart: always
+    build:
+      context: ./frontend/.
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
   nginx:
     image: nginx:stable-alpine
     container_name: priceops_nginx
@@ -26,7 +36,8 @@ services:
       - "80:80"
     depends_on:
       - backend
-    restart: no
+      - front
+    restart: always
 
   db:
     image: postgres:15
@@ -113,16 +124,6 @@ services:
     depends_on:
       - redis
       - celery
-
-  front:
-    container_name: front
-    restart: always
-    build:
-      context: ./frontend/.
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
 
 volumes:
   postgres_data:
