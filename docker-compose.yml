@@ -3,8 +3,7 @@ services:
     build: ./backend/
     container_name: priceops_django_api
     command: >
-      sh -c "python manage.py migrate &&
-             gunicorn core.wsgi:application -c /app/gunicorn.conf.py"
+      sh -c "gunicorn core.wsgi:application -c /app/gunicorn.conf.py"
     env_file:
       - ./backend/.env
       - ./.env            
