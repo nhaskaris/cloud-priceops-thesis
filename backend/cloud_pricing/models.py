@@ -128,30 +128,29 @@ class NormalizedPricingData(models.Model):
 
     class Meta:
         db_table = "normalized_pricing_data"
-        # UNIQUE constraint for ON CONFLICT upserts
 
         indexes = [
-            # Existing useful indexes
             models.Index(fields=['effective_date']),
             models.Index(fields=['is_active']),
             models.Index(fields=['price_per_unit'], name='idx_price_positive', condition=models.Q(price_per_unit__gt=0)),
 
-            # Index for raw_entry joins
             models.Index(fields=['raw_entry'], name='idx_npd_raw_entry'),
 
-            # Composite index for effective date filtering
             models.Index(
                 fields=['is_active', 'effective_date'],
                 name='idx_npd_active_effective'
             ),
 
-            # Index for source_api queries
             models.Index(fields=['source_api'], name='idx_npd_source_api'),
 
-            # Index for provider-service-region combinations
             models.Index(
                 fields=['provider', 'service', 'region'],
                 name='idx_npd_prov_serv_reg'
+            ),
+
+            models.Index(
+                fields=['is_active', 'region', 'operating_system', 'vcpu_count', 'memory_gb', 'effective_date'],
+                name='idx_npd_matching'
             ),
         ]
 
