@@ -396,7 +396,7 @@ class MLEngineViewSet(viewsets.ModelViewSet):
         task = compute_price_prediction.delay(best_model.id, request.data)
 
         try:
-            predicted_price = task.get(timeout=10)
+            predicted_price = task.get(timeout=5)
 
             # Find closest actual pricing records from DB
             vcpu = request.data.get('vcpu_count', request.data.get('vcpu', 0))
@@ -454,9 +454,9 @@ class MLEngineViewSet(viewsets.ModelViewSet):
         task = compute_price_prediction.delay(engine.id, request.data)
 
         try:
-            # 3. Wait for the result (e.g., up to 10 seconds)
+            # 3. Wait for the result (e.g., up to 5 seconds)
             # This blocks the Django thread but keeps the 'statsmodels' requirement in the worker
-            predicted_price = task.get(timeout=10)
+            predicted_price = task.get(timeout=5)
 
             return Response({
                 "engine_version": engine.version,

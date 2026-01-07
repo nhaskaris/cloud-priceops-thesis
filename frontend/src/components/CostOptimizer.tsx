@@ -79,10 +79,10 @@ export default function CostOptimizer() {
       })
 
       const specs = {
-        vcpu: parseFloat(vcpu),
-        memory: parseFloat(memory),
+        vcpu_count: parseFloat(vcpu),
+        memory_gb: parseFloat(memory),
         region,
-        os,
+        operating_system: os,
         tenancy,
         domain_label: 'iaas',  // Filter to IaaS only
       }

@@ -68,12 +68,12 @@ services:
       dockerfile: Dockerfileml
     container_name: priceops_celery_worker
     # Limit concurrency and recycle worker children to reduce memory usage/OOM risk.
-    # -c 1                          -> single concurrent worker process
+    # -c 4                          -> 4 concurrent worker processes
     # --max-tasks-per-child=50     -> recycle child after 50 tasks (prevents mem growth)
     # --time-limit / --soft-time-limit -> hard/soft task timeouts (seconds)
     # --prefetch-multiplier=1      -> avoid prefetching many tasks into a worker
     command: >
-      sh -c "celery -A core worker --loglevel=info -E -c 1 --max-tasks-per-child=1 --prefetch-multiplier=1"
+      sh -c "celery -A core worker --loglevel=info -E -c 6 --max-tasks-per-child=20 --prefetch-multiplier=1"
     env_file:
       - ./backend/.env
       - ./.env
