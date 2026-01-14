@@ -469,7 +469,7 @@ export default function ModelsDashboard() {
         <table className="results" style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th onClick={() => changeSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Name</th>
+              <th onClick={() => changeSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Model Name</th>
               <th onClick={() => changeSort('model_type')} style={{ cursor: 'pointer', userSelect: 'none' }}>Type</th>
               <th onClick={() => changeSort('version')} style={{ cursor: 'pointer', userSelect: 'none' }}>Version</th>
               <th onClick={() => changeSort('r_squared')} style={{ cursor: 'pointer', userSelect: 'none' }}>R²</th>

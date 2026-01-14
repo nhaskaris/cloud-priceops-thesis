@@ -10,6 +10,7 @@ type ModelType = {
     r_squared?: number
     mape?: number
     is_active: boolean
+    timestamp_created?: string
   }
   feature_names?: string[]
   log_transformed_features?: string[]
@@ -24,6 +25,8 @@ type PredictionResult = {
   model_name?: string
   r_squared?: number | null
   mape?: number
+  timestamp_created?: string
+  created_at?: string
   input_specs?: {
     vcpu?: number
     memory?: number
@@ -667,8 +670,18 @@ export default function PricingAnalyzer() {
                               <span style={{ color: '#94a3b8' }}>Config:</span> {pred.input_specs.vcpu}x vCPU, {pred.input_specs.memory}GB RAM, {pred.input_specs.region}, {pred.input_specs.os}
                             </div>
                             {typeof pred.r_squared === 'number' && (
-                              <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                              <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.35rem' }}>
                                 Model R²: {pred.r_squared.toFixed(4)} | MAPE: {pred.mape?.toFixed(2)}%
+                              </div>
+                            )}
+                            {pred.timestamp_created && (
+                              <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                                Trained: {new Date(pred.timestamp_created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            )}
+                            {pred.created_at && (
+                              <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                                Registered: {new Date(pred.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </div>
                             )}
                           </div>

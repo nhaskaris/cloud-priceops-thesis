@@ -41,6 +41,7 @@ class MLEngineSummarySerializer(serializers.ModelSerializer):
             'rmse',
             'training_sample_size',
             'is_active',
+            'timestamp_created',
             'created_at',
             'updated_at',
         ]

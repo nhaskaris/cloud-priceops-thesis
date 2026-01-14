@@ -40,6 +40,7 @@ class MLEngine(models.Model):
 
     # Status & Champion logic
     is_active = models.BooleanField(default=False, help_text="Is this the current 'Champion' for this name?")
+    timestamp_created = models.DateTimeField(auto_now_add=True, help_text="When the model was trained/created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
