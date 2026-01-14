@@ -82,7 +82,6 @@ export default function PricingAnalyzer() {
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [predictions, setPredictions] = useState<PredictionResult[]>([])
-  const [savings, setSavings] = useState<{ type: string; percentage: number; amount: number } | null>(null)
 
   // Fetch available model types
   useEffect(() => {
@@ -130,7 +129,6 @@ export default function PricingAnalyzer() {
     setLoading(true)
     setError(null)
     setPredictions([])
-    setSavings(null)
 
     try {
       if (analysisMode === 'simple') {
@@ -174,18 +172,6 @@ export default function PricingAnalyzer() {
 
         const prediction = await response.json()
         setPredictions([prediction])
-
-        // Calculate savings
-        const currentCostNum = parseFloat(currentCost)
-        if (prediction.predicted_price < currentCostNum) {
-          const savingsAmount = currentCostNum - prediction.predicted_price
-          const savingsPercent = (savingsAmount / currentCostNum) * 100
-          setSavings({
-            type: prediction.model_type || 'Best Match',
-            percentage: savingsPercent,
-            amount: savingsAmount,
-          })
-        }
       } else {
         // Advanced mode: use selected type with full parameters
         const payload: Record<string, any> = {
@@ -626,23 +612,7 @@ export default function PricingAnalyzer() {
         <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155' }}>
           <h3 style={{ color: '#f1f5f9', marginTop: 0 }}>Analysis Results</h3>
 
-          {analysisMode === 'simple' && savings && (
-            <div style={{
-              background: 'linear-gradient(135deg, #064e3b, #047857)',
-              padding: '1.5rem',
-              borderRadius: 10,
-              marginBottom: '1.5rem',
-              border: '1px solid #10b981',
-            }}>
-              <div style={{ color: '#a7f3d0', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Potential Savings</div>
-              <div style={{ color: '#f1f5f9', fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                {savings.percentage.toFixed(1)}% - ${formatPrice(savings.amount)}/hour
-              </div>
-              <div style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                Using {savings.type} model
-              </div>
-            </div>
-          )}
+
 
           {predictions.length > 0 && (
             <div>
@@ -654,7 +624,6 @@ export default function PricingAnalyzer() {
 
               {predictions.map((pred, idx) => {
                 const diff = analysisMode === 'simple' ? pred.predicted_price - parseFloat(currentCost) : 0
-                const diffPercent = analysisMode === 'simple' ? (diff / parseFloat(currentCost)) * 100 : 0
                 const isCheaper = analysisMode === 'simple' && diff < 0
 
                 return (
@@ -668,51 +637,46 @@ export default function PricingAnalyzer() {
                       marginBottom: '0.75rem',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <div>
-                        <div style={{ color: '#e2e8f0', fontWeight: 600 }}>
-                          {pred.model_type ? pred.model_type.replace(/_/g, ' ') : pred.model_name || 'Prediction'}
+                    {analysisMode === 'advanced' && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <div>
+                            <div style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                              {pred.model_type ? pred.model_type.replace(/_/g, ' ') : pred.model_name || 'Prediction'}
+                            </div>
+                            <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                              {pred.engine_version}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: getPredictionColor(pred.predicted_price, parseFloat(currentCost)), fontSize: '1.35rem', fontWeight: 700 }}>
+                              ${formatPrice(pred.predicted_price)}
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                          {pred.engine_version}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: getPredictionColor(pred.predicted_price, parseFloat(currentCost)), fontSize: '1.35rem', fontWeight: 700 }}>
-                          ${formatPrice(pred.predicted_price)}
-                        </div>
-                        {analysisMode === 'simple' && (
+                        
+                        {pred.input_specs && (
                           <div style={{
-                            color: isCheaper ? '#22c55e' : '#ef4444',
+                            paddingTop: '0.75rem',
+                            borderTop: '1px solid #334155',
+                            marginBottom: '0.75rem',
                             fontSize: '0.85rem',
-                            fontWeight: 600,
+                            color: '#cbd5e1',
                           }}>
-                            {isCheaper ? '↓' : '↑'} {Math.abs(diffPercent).toFixed(1)}%
+                            <div style={{ marginBottom: '0.35rem' }}>
+                              <span style={{ color: '#94a3b8' }}>Config:</span> {pred.input_specs.vcpu}x vCPU, {pred.input_specs.memory}GB RAM, {pred.input_specs.region}, {pred.input_specs.os}
+                            </div>
+                            {typeof pred.r_squared === 'number' && (
+                              <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                                Model R²: {pred.r_squared.toFixed(4)} | MAPE: {pred.mape?.toFixed(2)}%
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    </div>
-                    
-                    {pred.input_specs && (
-                      <div style={{
-                        paddingTop: '0.75rem',
-                        borderTop: '1px solid #334155',
-                        marginBottom: '0.75rem',
-                        fontSize: '0.85rem',
-                        color: '#cbd5e1',
-                      }}>
-                        <div style={{ marginBottom: '0.35rem' }}>
-                          <span style={{ color: '#94a3b8' }}>Config:</span> {pred.input_specs.vcpu}x vCPU, {pred.input_specs.memory}GB RAM, {pred.input_specs.region}, {pred.input_specs.os}
-                        </div>
-                        {typeof pred.r_squared === 'number' && (
-                          <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                            Model R²: {pred.r_squared.toFixed(4)} | MAPE: {pred.mape?.toFixed(2)}%
-                          </div>
-                        )}
-                      </div>
+                      </>
                     )}
 
-                    {pred.actual_pricing_options && pred.actual_pricing_options.length > 0 && (
+                    {analysisMode === 'simple' && pred.actual_pricing_options && pred.actual_pricing_options.length > 0 && (
                       <div style={{
                         paddingTop: '0.75rem',
                         borderTop: '1px solid #334155',

@@ -40,7 +40,7 @@ function App() {
               <Link to="/models" onClick={() => setMobileMenuOpen(false)}>Models</Link>
               <Link to="/contribute" onClick={() => setMobileMenuOpen(false)}>Contribute</Link>
               <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Docs</Link>
-              <a href={`${BACKEND_URL}/api/schema/swagger-ui/`} target="_blank" rel="noopener noreferrer">API</a>
+              <a href={`${BACKEND_URL}/schema/swagger-ui/`} target="_blank" rel="noopener noreferrer">API</a>
             </nav>
           </div>
         </header>
