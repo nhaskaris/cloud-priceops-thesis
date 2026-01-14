@@ -166,21 +166,6 @@ export default function ModelsDashboard() {
                         border: '1px solid rgba(255,255,255,0.1)'
                       }}
                     >
-                      <div style={{ 
-                        position: 'absolute', 
-                        top: '-1.5rem', 
-                        left: '50%', 
-                        transform: 'translateX(-50%)', 
-                        fontSize: '0.75rem', 
-                        color: '#e2e8f0',
-                        whiteSpace: 'nowrap',
-                        fontWeight: 600,
-                        backgroundColor: '#0f172a',
-                        padding: '0.125rem 0.25rem',
-                        borderRadius: 4
-                      }}>
-                        {d.r2.toFixed(3)}
-                      </div>
                     </div>
                     <div style={{ 
                       fontSize: '0.7rem', 
@@ -215,7 +200,7 @@ export default function ModelsDashboard() {
                           boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
                           pointerEvents: 'none'
                         }}>
-                          {d.name}
+                          {d.name} • R²: {d.r2.toFixed(4)}
                         </div>
                       )}
                     </div>
@@ -274,21 +259,6 @@ export default function ModelsDashboard() {
                           border: '1px solid rgba(255,255,255,0.1)'
                         }}
                       >
-                        <div style={{ 
-                          position: 'absolute', 
-                          top: '-1.5rem', 
-                          left: '50%', 
-                          transform: 'translateX(-50%)', 
-                          fontSize: '0.75rem', 
-                          color: '#e2e8f0',
-                          whiteSpace: 'nowrap',
-                          fontWeight: 600,
-                          backgroundColor: '#0f172a',
-                          padding: '0.125rem 0.25rem',
-                          borderRadius: 4
-                        }}>
-                          {r.mape!.toFixed(1)}%
-                        </div>
                       </div>
                       <div style={{ 
                         fontSize: '0.7rem', 
@@ -323,7 +293,7 @@ export default function ModelsDashboard() {
                             boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
                             pointerEvents: 'none'
                           }}>
-                            {r.name}
+                            {r.name} • MAPE: {r.mape!.toFixed(2)}%
                           </div>
                         )} 
                       </div>
