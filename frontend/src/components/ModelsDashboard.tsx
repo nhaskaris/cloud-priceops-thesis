@@ -21,6 +21,7 @@ export default function ModelsDashboard() {
   const [q, setQ] = useState('')
   const [sortKey, setSortKey] = useState<keyof EngineSummary>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -146,9 +147,9 @@ export default function ModelsDashboard() {
             <div style={{ color: '#94a3b8', fontSize: '0.9rem', padding: '2rem', textAlign: 'center' }}>No R² data available</div>
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '0.5rem 0' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '2.5rem 0.5rem 0.5rem 0.5rem', position: 'relative' }}>
                 {r2ByType.map((d, i) => (
-                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
+                  <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0, position: 'relative', height: '100%' }} onMouseEnter={() => setHoveredModel(d.name)} onMouseLeave={() => setHoveredModel(null)}>
                     <div 
                       style={{ 
                         width: '100%', 
@@ -164,7 +165,6 @@ export default function ModelsDashboard() {
                         cursor: 'pointer',
                         border: '1px solid rgba(255,255,255,0.1)'
                       }}
-                      title={`${d.name}: R² = ${d.r2.toFixed(4)}`}
                     >
                       <div style={{ 
                         position: 'absolute', 
@@ -188,12 +188,36 @@ export default function ModelsDashboard() {
                       marginTop: '0.5rem', 
                       textAlign: 'center',
                       whiteSpace: 'nowrap',
-                      overflow: 'hidden',
+                      overflow: 'visible',
                       textOverflow: 'ellipsis',
                       width: '100%',
-                      fontWeight: 500
-                    }} title={d.name}>
-                      {d.name.length > 12 ? d.name.substring(0, 10) + '…' : d.name}
+                      fontWeight: 500,
+                      position: 'relative',
+                      cursor: 'help'
+                    }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', display: 'block' }}>
+                        {d.name.length > 12 ? d.name.substring(0, 10) + '…' : d.name}
+                      </span>
+                      {hoveredModel === d.name && d.name.length > 12 && (
+                        <div style={{ 
+                          position: 'absolute',
+                          bottom: 'calc(100% + 0.5rem)',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          background: '#0f172a',
+                          color: '#f1f5f9',
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: 6,
+                          fontSize: '0.75rem',
+                          whiteSpace: 'nowrap',
+                          border: '1px solid #475569',
+                          zIndex: 10,
+                          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+                          pointerEvents: 'none'
+                        }}>
+                          {d.name}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -230,11 +254,11 @@ export default function ModelsDashboard() {
             <div style={{ color: '#94a3b8', fontSize: '0.9rem', padding: '2rem', textAlign: 'center' }}>No MAPE data available</div>
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '0.5rem 0' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: 200, padding: '2.5rem 0.5rem 0.5rem 0.5rem', position: 'relative' }}>
                 {rows.filter(r => typeof r.mape === 'number').map((r, i) => {
                   const maxMape = Math.max(...rows.filter(r => typeof r.mape === 'number').map(r => r.mape!))
                   return (
-                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0 }}>
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0, position: 'relative', height: '100%' }} onMouseEnter={() => setHoveredModel(r.name)} onMouseLeave={() => setHoveredModel(null)}>
                       <div 
                         style={{ 
                           width: '100%', 
@@ -249,7 +273,6 @@ export default function ModelsDashboard() {
                           cursor: 'pointer',
                           border: '1px solid rgba(255,255,255,0.1)'
                         }}
-                        title={`${r.name}: MAPE = ${r.mape!.toFixed(2)}%`}
                       >
                         <div style={{ 
                           position: 'absolute', 
@@ -273,12 +296,36 @@ export default function ModelsDashboard() {
                         marginTop: '0.5rem', 
                         textAlign: 'center',
                         whiteSpace: 'nowrap',
-                        overflow: 'hidden',
+                        overflow: 'visible',
                         textOverflow: 'ellipsis',
                         width: '100%',
-                        fontWeight: 500
-                      }} title={r.name}>
-                        {r.name.length > 12 ? r.name.substring(0, 10) + '…' : r.name}
+                        fontWeight: 500,
+                        position: 'relative',
+                        cursor: 'help'
+                      }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', display: 'block' }}>
+                          {r.name.length > 12 ? r.name.substring(0, 10) + '…' : r.name}
+                        </span>
+                        {hoveredModel === r.name && r.name.length > 12 && (
+                          <div style={{ 
+                            position: 'absolute',
+                            bottom: 'calc(100% + 0.5rem)',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: '#0f172a',
+                            color: '#f1f5f9',
+                            padding: '0.5rem 0.75rem',
+                            borderRadius: 6,
+                            fontSize: '0.75rem',
+                            whiteSpace: 'nowrap',
+                            border: '1px solid #475569',
+                            zIndex: 10,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+                            pointerEvents: 'none'
+                          }}>
+                            {r.name}
+                          </div>
+                        )} 
                       </div>
                     </div>
                   )
@@ -329,9 +376,8 @@ export default function ModelsDashboard() {
               
               {/* Data points */}
               {rows.filter(r => typeof r.r_squared === 'number' && typeof r.mape === 'number').map((r, i) => {
-                const maxMape = Math.max(...rows.filter(r => typeof r.mape === 'number').map(r => r.mape!))
                 const x = (r.r_squared! / 1) * 100
-                const y = 100 - ((r.mape! / maxMape) * 100)
+                const y = 100 - r.mape! // MAPE is already a percentage, use directly
                 
                 return (
                   <div
