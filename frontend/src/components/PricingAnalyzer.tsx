@@ -57,9 +57,33 @@ type AdditionalParam = {
   value: string
 }
 
+type DataAnalytics = {
+  total_pricing_records: number
+  by_provider: Record<string, number>
+  by_service: Record<string, number>
+  regions_covered: number
+  completeness_percentage: number
+  date_range: {
+    oldest: string
+    newest: string
+  }
+  unique_instance_types: number
+  price_range: {
+    min: number | null
+    max: number | null
+  }
+  provider_imports: Array<{
+    provider: string
+    record_count: number
+    last_updated: string
+    source_api: string
+  }>
+}
+
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
 export default function PricingAnalyzer() {
+  const [activeView, setActiveView] = useState<'overview' | 'predictions'>('overview')
   const [analysisMode, setAnalysisMode] = useState<'simple' | 'advanced'>('simple')
   const [modelTypes, setModelTypes] = useState<ModelType[]>([])
   const [selectedType, setSelectedType] = useState<string>('')
@@ -85,6 +109,10 @@ export default function PricingAnalyzer() {
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [predictions, setPredictions] = useState<PredictionResult[]>([])
+  
+  // Data Analytics
+  const [dataAnalytics, setDataAnalytics] = useState<DataAnalytics | null>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(true)
 
   // Fetch available model types
   useEffect(() => {
@@ -106,6 +134,24 @@ export default function PricingAnalyzer() {
       }
     }
     fetchModelTypes()
+  }, [])
+
+  // Fetch data analytics
+  useEffect(() => {
+    const fetchDataAnalytics = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/normalized-pricing-data/analytics/`)
+        if (res.ok) {
+          const data = await res.json()
+          setDataAnalytics(data)
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch data analytics:', err)
+      } finally {
+        setAnalyticsLoading(false)
+      }
+    }
+    fetchDataAnalytics()
   }, [])
 
   // Update type details when selection changes
@@ -135,23 +181,9 @@ export default function PricingAnalyzer() {
 
     try {
       if (analysisMode === 'simple') {
-        // Simple mode: find best model and predict
-        const typesRes = await fetch(`${BACKEND_URL}/engines/types/`)
-        if (!typesRes.ok) throw new Error('Failed to fetch model types')
-        const typesData = await typesRes.json()
+        // Simple mode: directly query database for pricing options without ML prediction
+        const currentPrice = parseFloat(currentCost)
         
-        if (!Array.isArray(typesData) || typesData.length === 0) {
-          setError('No models available. Please register a model first.')
-          setLoading(false)
-          return
-        }
-
-        const bestModelType = typesData.reduce((best, current) => {
-          const bestR2 = best.best_model?.r_squared ?? -1
-          const currentR2 = current.best_model?.r_squared ?? -1
-          return currentR2 > bestR2 ? current : best
-        })
-
         const specs = {
           vcpu_count: parseFloat(vcpu),
           memory_gb: parseFloat(memory),
@@ -161,20 +193,36 @@ export default function PricingAnalyzer() {
           domain_label: 'iaas',
         }
 
-        const response = await fetch(`${BACKEND_URL}/engines/predict-by-type/${bestModelType.type}/`, {
+        // Call the new find-options endpoint that doesn't require ML models
+        const response = await fetch(`${BACKEND_URL}/normalized-pricing-data/find-options/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(specs),
         })
 
         if (!response.ok) {
-          setError('Could not get prediction from the best model')
-          setLoading(false)
-          return
+          throw new Error('Failed to fetch pricing options from database')
         }
 
-        const prediction = await response.json()
-        setPredictions([prediction])
+        const data = await response.json()
+        
+        // Create a prediction object with current price and DB options
+        const mockPrediction = {
+          engine_version: 'database-query',
+          predicted_price: currentPrice,
+          currency: 'USD',
+          input_specs: {
+            vcpu_count: parseFloat(vcpu),
+            memory_gb: parseFloat(memory),
+            region,
+            operating_system: os,
+            tenancy,
+            current_price: currentPrice
+          },
+          actual_pricing_options: data.pricing_options || []
+        }
+
+        setPredictions([mockPrediction])
       } else {
         // Advanced mode: use selected type with full parameters
         const payload: Record<string, any> = {
@@ -235,18 +283,73 @@ export default function PricingAnalyzer() {
     })
   }
 
+  const topProviders = dataAnalytics ? 
+    Object.entries(dataAnalytics.by_provider)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5) : []
+
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       <div className="page-header">
         <div className="page-header-breadcrumb">
-          Pricing Analysis
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M1 11a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3zm5-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-7zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2z"/>
+          </svg>
+          Analysis & Insights
         </div>
-        <h1 className="page-header-title">Pricing Analysis & Optimization</h1>
-        <p className="page-header-subtitle">Analyze cloud pricing with ML-powered predictions and cost optimization insights</p>
+        <h1 className="page-header-title">Cloud Pricing Analysis</h1>
+        <p className="page-header-subtitle">Leverage ML-powered predictions to estimate pricing, compare options, and understand market trends</p>
       </div>
 
-      {/* Mode Toggle */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+      {/* View Toggle */}
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #334155', paddingBottom: '1rem' }}>
+        <button
+          onClick={() => setActiveView('overview')}
+          style={{
+            padding: '0.75rem 2rem',
+            background: activeView === 'overview' ? 'linear-gradient(180deg, #3b82f6, #2563eb)' : 'transparent',
+            color: activeView === 'overview' ? 'white' : '#94a3b8',
+            border: activeView === 'overview' ? 'none' : '1px solid #334155',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 600,
+            transition: 'all 0.2s',
+          }}
+        >
+          Data Overview
+        </button>
+        <button
+          onClick={() => setActiveView('predictions')}
+          style={{
+            padding: '0.75rem 2rem',
+            background: activeView === 'predictions' ? 'linear-gradient(180deg, #3b82f6, #2563eb)' : 'transparent',
+            color: activeView === 'predictions' ? 'white' : '#94a3b8',
+            border: activeView === 'predictions' ? 'none' : '1px solid #334155',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 600,
+            transition: 'all 0.2s',
+          }}
+        >
+          Pricing Predictions
+        </button>
+      </div>
+
+      {/* Section 1: Prediction Tools */}
+      {activeView === 'predictions' && (
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ color: '#f1f5f9', fontSize: '1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          Prediction Tools
+        </h2>
+        <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.6 }}>
+          Choose between two analysis modes: <strong>Cost Optimizer</strong> to find cheaper alternatives to your current setup, 
+          or <strong>Advanced Prediction</strong> for detailed estimates with custom parameters.
+        </p>
+
+        {/* Mode Toggle */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <button
           onClick={() => setAnalysisMode('simple')}
           style={{
@@ -287,6 +390,11 @@ export default function PricingAnalyzer() {
           <h3 style={{ color: '#f1f5f9', marginTop: 0 }}>
             {analysisMode === 'simple' ? 'Your Current Setup' : 'Resource Specifications'}
           </h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+            {analysisMode === 'simple' 
+              ? 'Enter your current cloud resource configuration and hourly cost to find optimization opportunities'
+              : 'Configure your desired resources with optional advanced parameters for precise predictions'}
+          </p>
 
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem' }}>
@@ -594,34 +702,37 @@ export default function PricingAnalyzer() {
               transition: 'all 0.2s',
             }}
           >
-            {loading ? 'Analyzing...' : analysisMode === 'simple' ? 'Analyze Cost' : 'Get Prediction'}
-          </button>
+{loading ? 'Analyzing...' : analysisMode === 'simple' ? 'Find Better Options' : 'Get Prediction'}
+            </button>
 
-          {error && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '0.75rem 1rem',
-              background: '#7f1d1d',
-              color: '#fecaca',
-              borderRadius: 8,
-              fontSize: '0.9rem',
-            }}>
-              {error}
-            </div>
-          )}
-        </div>
+            {error && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem 1rem',
+                background: '#7f1d1d',
+                color: '#fecaca',
+                borderRadius: 8,
+                fontSize: '0.9rem',
+              }}>
+                {error}
+              </div>
+            )}
+          </div>
 
-        {/* Results */}
-        <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155' }}>
-          <h3 style={{ color: '#f1f5f9', marginTop: 0 }}>Analysis Results</h3>
+          {/* Results */}
+          <div style={{ background: '#1e293b', padding: '2rem', borderRadius: 12, border: '1px solid #334155' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0 }}>Analysis Results</h3>
 
 
 
           {predictions.length > 0 && (
             <div>
               {analysisMode === 'simple' && (
-                <div style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                  Current Cost: ${formatPrice(parseFloat(currentCost))}/hour
+                  <div style={{ background: '#0f172a', padding: '1rem', borderRadius: 8, marginBottom: '1rem', borderLeft: '3px solid #3b82f6' }}>
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Current Market Price</div>
+                    <div style={{ color: '#e2e8f0', fontSize: '1.25rem', fontWeight: 600 }}>
+                      ${formatPrice(parseFloat(currentCost))}/hour
+                    </div>
                 </div>
               )}
 
@@ -698,36 +809,48 @@ export default function PricingAnalyzer() {
                         <div style={{ color: '#a7f3d0', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.5rem' }}>
                           Available Options from Database:
                         </div>
-                        {pred.actual_pricing_options.map((option, optIdx) => (
-                          <div key={optIdx} style={{
-                            background: '#1e293b',
-                            padding: '0.75rem',
-                            borderRadius: 6,
-                            marginBottom: '0.75rem',
-                            fontSize: '0.8rem',
-                            border: '1px solid #475569',
-                          }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', alignItems: 'flex-start' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ color: '#cbd5e1', fontWeight: 700, marginBottom: '0.25rem' }}>
-                                  {option.instance_type}
+                        {pred.actual_pricing_options.map((option, optIdx) => {
+                          const optionPrice = option.price
+                          const currentPrice = parseFloat(currentCost)
+                          const priceDiff = optionPrice - currentPrice
+                          const isCheaperOption = priceDiff < 0
+                          const priceComparisonColor = isCheaperOption ? '#10b981' : '#f87171'
+                          const borderColor = isCheaperOption ? '#10b981' : '#ef4444'
+
+                          return (
+                            <div key={optIdx} style={{
+                              background: '#1e293b',
+                              padding: '0.75rem',
+                              borderRadius: 6,
+                              marginBottom: '0.75rem',
+                              fontSize: '0.8rem',
+                              border: `1px solid ${borderColor}`,
+                              backgroundColor: isCheaperOption ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                            }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', alignItems: 'flex-start' }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ color: '#cbd5e1', fontWeight: 700, marginBottom: '0.25rem' }}>
+                                    {option.instance_type}
+                                  </div>
+                                  <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                                    {option.provider && option.provider !== 'Unknown' && `${option.provider}`}
+                                    {option.provider && option.provider !== 'Unknown' && option.service && option.service !== 'Unknown' && ' • '}
+                                    {option.service && option.service !== 'Unknown' && `${option.service}`}
+                                  </div>
+                                  <div style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
+                                    {option.vcpu}x vCPU • {option.memory}GB RAM
+                                  </div>
                                 </div>
-                                <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                  {option.service && `Service: ${option.service}`}
-                                  {option.service && option.provider && ' • '}
-                                  {option.provider && `${option.provider.toUpperCase()}`}
-                                </div>
-                                <div style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>
-                                  {option.vcpu}x vCPU • {option.memory}GB RAM
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ color: '#22d3ee', fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>
+                                    ${formatPrice(option.price)}
+                                  </div>
+                                  <div style={{ color: priceComparisonColor, fontWeight: 600, fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                                    {isCheaperOption ? `Save $${formatPrice(Math.abs(priceDiff))}/hr` : `+$${formatPrice(priceDiff)}/hr`}
+                                  </div>
+                                  <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>per hour</div>
                                 </div>
                               </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ color: '#22d3ee', fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem' }}>
-                                  ${formatPrice(option.price)}
-                                </div>
-                                <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>per hour</div>
-                              </div>
-                            </div>
                             <div style={{ 
                               display: 'grid', 
                               gridTemplateColumns: '1fr 1fr', 
@@ -755,8 +878,9 @@ export default function PricingAnalyzer() {
                                 {option.description}
                               </div>
                             )}
-                          </div>
-                        ))}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                     
@@ -779,12 +903,196 @@ export default function PricingAnalyzer() {
           {!loading && predictions.length === 0 && !error && (
             <div style={{ color: '#64748b', textAlign: 'center', paddingTop: '2rem' }}>
               {analysisMode === 'simple'
-                ? 'Enter your setup and click "Analyze Cost" to find optimization opportunities'
+                ? 'Enter your setup and click "Find Better Options" to find optimization opportunities'
                 : 'Enter your specifications and click "Get Prediction" to see pricing estimates'}
             </div>
           )}
+          </div>
         </div>
       </div>
+      )}
+
+      {/* Section 2: Data Overview */}
+      {activeView === 'overview' && (
+      <div style={{ marginBottom: '2rem' }}>
+        <h2 style={{ color: '#f1f5f9', fontSize: '1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          Pricing Database Overview
+        </h2>
+        <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.6 }}>
+          Our pricing database aggregates real-time pricing data from multiple cloud providers. Below is a snapshot of data completeness 
+          and coverage to help you understand the reliability of our predictions.
+        </p>
+
+        {analyticsLoading ? (
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            alignItems: 'center', 
+            justifyContent: 'center',
+            padding: '3rem',
+            gap: '1rem'
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #334155',
+              borderTop: '4px solid #60a5fa',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <div style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
+              Loading data overview
+              <span style={{ 
+                display: 'inline-block',
+                width: '1.5em',
+                textAlign: 'left'
+              }}>
+                <span style={{ animation: 'dots 1.4s steps(4, end) infinite' }}>...</span>
+              </span>
+            </div>
+            <style>{`
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+              @keyframes dots {
+                0%, 20% { content: '.'; }
+                40% { content: '..'; }
+                60%, 100% { content: '...'; }
+              }
+            `}</style>
+          </div>
+        ) : dataAnalytics ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            {/* Key Stats */}
+            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155' }}>
+              <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Total Pricing Records</div>
+              <div style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 700 }}>{dataAnalytics.total_pricing_records.toLocaleString()}</div>
+            </div>
+
+            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155' }}>
+              <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Instance Types Available</div>
+              <div style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 700 }}>{dataAnalytics.unique_instance_types.toLocaleString()}</div>
+            </div>
+
+            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155' }}>
+              <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Regions Covered</div>
+              <div style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 700 }}>{dataAnalytics.regions_covered}</div>
+            </div>
+
+            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155' }}>
+              <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Data Completeness</div>
+              <div style={{ color: '#f1f5f9', fontSize: '2rem', fontWeight: 700 }}>{dataAnalytics.completeness_percentage.toFixed(1)}%</div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Data Import Status */}
+        {dataAnalytics && dataAnalytics.provider_imports && dataAnalytics.provider_imports.length > 0 && (
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155', marginBottom: '2rem' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              Data Import Status
+            </h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Automatic updates from cloud provider APIs. Shows the last import timestamp for each provider.
+            </p>
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              {dataAnalytics.provider_imports.map((importInfo, idx) => {
+                const lastUpdate = new Date(importInfo.last_updated)
+                const hoursAgo = Math.floor((Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60))
+                const daysAgo = Math.floor(hoursAgo / 24)
+                
+                let freshness = '✅ Fresh'
+                let freshnessColor = '#10b981'
+                if (daysAgo > 7) {
+                  freshness = '⚠️ Aging'
+                  freshnessColor = '#f59e0b'
+                } else if (daysAgo > 30) {
+                  freshness = '⚠️ Stale'
+                  freshnessColor = '#ef4444'
+                }
+
+                return (
+                  <div key={idx} style={{
+                    background: '#0f172a',
+                    padding: '1rem',
+                    borderRadius: 8,
+                    border: '1px solid #334155',
+                    borderLeft: `3px solid ${freshnessColor}`,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                      <div>
+                        <div style={{ color: '#e2e8f0', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          {importInfo.provider}
+                        </div>
+                        <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                          {importInfo.record_count.toLocaleString()} records
+                        </div>
+                        <div style={{ color: '#64748b', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          Source: {importInfo.source_api}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: freshnessColor, fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          {freshness}
+                        </div>
+                        <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                          {daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      Last updated: {lastUpdate.toLocaleString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Provider Breakdown */}
+        {topProviders.length > 0 && (
+          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 12, border: '1px solid #334155' }}>
+            <h3 style={{ color: '#f1f5f9', marginTop: 0, fontSize: '1.1rem' }}>Top Cloud Providers</h3>
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              {topProviders.map(([provider, count]) => {
+                const percentage = dataAnalytics ? (count / dataAnalytics.total_pricing_records) * 100 : 0
+                return (
+                  <div key={provider}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <span style={{ color: '#cbd5e1', fontWeight: 500 }}>{provider}</span>
+                      <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{count.toLocaleString()} records ({percentage.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ 
+                      width: '100%', 
+                      height: '8px', 
+                      background: '#0f172a', 
+                      borderRadius: 4,
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${percentage}%`,
+                        background: 'linear-gradient(90deg, #60a5fa, #3b82f6)',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+      )}
     </div>
   )
 }

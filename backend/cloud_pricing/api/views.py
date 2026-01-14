@@ -12,6 +12,7 @@ from celery.result import AsyncResult
 from django.http import StreamingHttpResponse
 from django.core.files.storage import default_storage
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
+from django.db.models import Count, Avg, Min, Max
 
 from ..models import NormalizedPricingData
 from .serializers import PricingDataSerializer
@@ -184,3 +185,202 @@ class NormalizedPricingDataViewSet(viewsets.ReadOnlyModelViewSet):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({'status': result.state, 'task_id': task_id}, status=status.HTTP_200_OK)
+
+    # ----------------------------------------------------------------------
+    # ACTION 3: PRICING DATA ANALYTICS (GET /analytics/)
+    # ----------------------------------------------------------------------
+    @action(detail=False, methods=['get'], url_path='analytics')
+    def analytics(self, request):
+        """
+        Get analytics and overview of the pricing database.
+        Returns data completeness, provider distribution, regions covered, and trends.
+        """
+        queryset = self.get_queryset()
+        
+        # Total records
+        total_records = queryset.count()
+        
+        if total_records == 0:
+            return Response({
+                'total_pricing_records': 0,
+                'by_provider': {},
+                'by_service': {},
+                'regions_covered': 0,
+                'completeness_percentage': 0,
+                'date_range': {'oldest': None, 'newest': None},
+                'unique_instance_types': 0,
+                'price_range': {'min': None, 'max': None},
+                'provider_imports': [],
+            }, status=status.HTTP_200_OK)
+        
+        # Provider distribution with last update info and source
+        provider_stats = list(
+            queryset.values('provider__display_name', 'provider__name', 'source_api')
+            .annotate(
+                count=Count('id'),
+                last_updated=Max('effective_date')
+            )
+        )
+        
+        # Provider import info with last update timestamps and source
+        provider_imports = []
+        for item in provider_stats:
+            provider_imports.append({
+                'provider': item['provider__display_name'],
+                'record_count': item['count'],
+                'last_updated': item['last_updated'],
+                'source_api': item['source_api'] or 'Infracost API',
+            })
+        
+        # Convert to dict for by_provider (aggregate counts by provider)
+        provider_dist = {}
+        for item in provider_stats:
+            provider_name = item['provider__display_name']
+            if provider_name in provider_dist:
+                provider_dist[provider_name] += item['count']
+            else:
+                provider_dist[provider_name] = item['count']
+        
+        # Service distribution - use service__name to get the actual name
+        service_dist = dict(
+            queryset.values('service__name')
+            .annotate(count=Count('id'))
+            .values_list('service__name', 'count')
+        )
+        
+        # Regions covered
+        regions_count = queryset.values('region').distinct().count()
+        
+        # Data completeness (percentage of records with all vital fields)
+        vital_fields_query = queryset.filter(
+            product_family__isnull=False,
+            instance_type__isnull=False,
+            operating_system__isnull=False,
+            vcpu_count__isnull=False,
+            memory_gb__isnull=False,
+        ).exclude(
+            product_family='',
+            instance_type='',
+            operating_system='',
+        )
+        completeness_pct = (vital_fields_query.count() / total_records * 100) if total_records > 0 else 0
+        
+        # Date range
+        date_stats = queryset.aggregate(
+            oldest=Min('effective_date'),
+            newest=Max('effective_date')
+        )
+        
+        # Unique instance types count
+        unique_instance_types = queryset.values('instance_type').distinct().count()
+        
+        # Price range (min/max hourly prices)
+        price_stats = queryset.aggregate(
+            min_price=Min('effective_price_per_hour'),
+            max_price=Max('effective_price_per_hour')
+        )
+        
+        return Response({
+            'total_pricing_records': total_records,
+            'by_provider': provider_dist,
+            'by_service': service_dist,
+            'regions_covered': regions_count,
+            'completeness_percentage': round(completeness_pct, 2),
+            'date_range': {
+                'oldest': date_stats['oldest'],
+                'newest': date_stats['newest'],
+            },
+            'unique_instance_types': unique_instance_types,
+            'price_range': {
+                'min': float(price_stats['min_price']) if price_stats['min_price'] else None,
+                'max': float(price_stats['max_price']) if price_stats['max_price'] else None,
+            },
+            'provider_imports': provider_imports,
+        }, status=status.HTTP_200_OK)
+
+    # ----------------------------------------------------------------------
+    # ACTION 4: FIND PRICING OPTIONS (POST /find-options/)
+    # ----------------------------------------------------------------------
+    @action(detail=False, methods=['post'], url_path='find-options')
+    def find_options(self, request):
+        """
+        Find similar pricing options from the database based on specs.
+        This is used by Cost Optimizer mode - no ML prediction involved.
+        """
+        import math
+        
+        # Extract specs from request
+        vcpu = request.data.get('vcpu_count', 0)
+        memory = request.data.get('memory_gb', 0)
+        region = request.data.get('region', '')
+        os = request.data.get('operating_system', '')
+        domain_label = request.data.get('domain_label', 'iaas')
+        
+        # Base queryset with filters
+        queryset = NormalizedPricingData.objects.filter(
+            is_active=True,
+            effective_price_per_hour__gt=0
+        )
+        
+        if domain_label:
+            queryset = queryset.filter(domain_label__icontains=domain_label)
+        
+        if region:
+            queryset = queryset.filter(region__name__icontains=region)
+        
+        if os and os.strip():
+            queryset = queryset.filter(operating_system__icontains=os)
+        
+        # Calculate similarity scores
+        W_VCPU = 0.3
+        W_MEMORY = 0.3
+        W_PRICE = 0.4
+        
+        results = []
+        for record in queryset:
+            if not record.vcpu_count or not record.memory_gb:
+                continue
+            
+            vcpu_val = record.vcpu_count
+            memory_val = float(record.memory_gb)
+            price_val = float(record.effective_price_per_hour)
+            
+            # Normalized differences
+            vcpu_diff_norm = abs(vcpu_val - vcpu) / max(vcpu, 1)
+            memory_diff_norm = abs(memory_val - memory) / max(memory, 1)
+            
+            price_ratio = price_val / (vcpu_val * memory_val + 0.1)
+            target_price_ratio = 0.01
+            price_diff_norm = abs(price_ratio - target_price_ratio) / max(target_price_ratio, 0.001)
+            
+            # Weighted Euclidean distance
+            euclidean_distance = math.sqrt(
+                (W_VCPU * vcpu_diff_norm) ** 2 +
+                (W_MEMORY * memory_diff_norm) ** 2 +
+                (W_PRICE * price_diff_norm) ** 2
+            )
+            
+            resource_fit_score = 100 * math.exp(-euclidean_distance)
+            
+            results.append({
+                'score': resource_fit_score,
+                'price': price_val,
+                'instance_type': record.instance_type,
+                'vcpu': vcpu_val,
+                'memory': memory_val,
+                'region': str(record.region.name) if record.region and record.region.name else 'Unknown',
+                'provider': str(record.provider.name) if record.provider and record.provider.name else 'Unknown',
+                'service': str(record.service.name) if record.service and record.service.name else 'Unknown',
+                'os': record.operating_system or 'Unknown',
+                'tenancy': record.tenancy or 'default',
+                'product_family': record.product_family or 'Unknown',
+                'pricing_model': str(record.pricing_model.name) if record.pricing_model and record.pricing_model.name else 'Unknown',
+                'description': record.description,
+            })
+        
+        # Sort by score
+        results = sorted(results, key=lambda x: x['score'], reverse=True)
+        
+        return Response({
+            'pricing_options': results[:10]  # Return top 10 matches
+        }, status=status.HTTP_200_OK)
