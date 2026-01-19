@@ -150,14 +150,30 @@ class Command(BaseCommand):
                 }
             )
             
-            # Create some coefficients for regression models
+            # Create coefficients for regression models
             if 'Regression' in template['model_type']:
-                for idx, feature in enumerate(template['features'][:5]):  # Limit to first 5 features
+                for idx, feature in enumerate(template['features']):
+                    # Stronger coefficients for more important features (first ones)
+                    coef_magnitude = random.uniform(0.5, 3.5) if idx < 3 else random.uniform(0.1, 1.5)
+                    coef_sign = random.choice([-1, 1])
+                    
                     ModelCoefficient.objects.create(
                         engine=engine,
                         feature_name=feature,
-                        value=random.uniform(-2, 2),
-                        p_value=random.uniform(0.001, 0.05)
+                        value=coef_sign * coef_magnitude,
+                        p_value=random.uniform(0.0001, 0.05)  # All coefficients are statistically significant
+                    )
+            
+            # Create coefficients for tree-based models (feature importance as coefficients)
+            elif 'Forest' in template['model_type'] or 'Boost' in template['model_type']:
+                importances = sorted([random.uniform(0, 1) for _ in template['features']], reverse=True)
+                total = sum(importances)
+                for feature, importance in zip(template['features'], importances):
+                    ModelCoefficient.objects.create(
+                        engine=engine,
+                        feature_name=feature,
+                        value=importance / total,  # Normalized importance
+                        p_value=None  # Not applicable for tree models
                     )
             
             created_count += 1

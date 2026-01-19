@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import ModelCoefficients from './ModelCoefficients'
 
 type EngineSummary = {
   id: string
@@ -22,6 +23,7 @@ export default function ModelsDashboard() {
   const [sortKey, setSortKey] = useState<keyof EngineSummary>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [hoveredModel, setHoveredModel] = useState<string | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -115,6 +117,13 @@ export default function ModelsDashboard() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      {selectedModelId && (
+        <ModelCoefficients
+          modelId={selectedModelId}
+          onClose={() => setSelectedModelId(null)}
+        />
+      )}
+      
       <div className="page-header">
         <div className="page-header-breadcrumb">
           Analytics / Models
@@ -479,6 +488,7 @@ export default function ModelsDashboard() {
           onChange={(e) => setQ(e.target.value)}
           style={{ padding: '0.5rem', border: '1px solid #475569', borderRadius: 6, width: '100%', maxWidth: 420, background: '#0f172a', color: '#e2e8f0' }}
         />
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>💡 Click any row to view model coefficients and details</div>
       </div>
 
       <div style={{ overflowX: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}>
@@ -498,7 +508,25 @@ export default function ModelsDashboard() {
           </thead>
           <tbody>
             {filtered.map(r => (
-              <tr key={r.id}>
+              <tr
+                key={r.id}
+                onClick={() => setSelectedModelId(r.id)}
+                style={{
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  background: selectedModelId === r.id ? '#334155' : 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedModelId !== r.id) {
+                    (e.currentTarget as HTMLTableRowElement).style.background = '#1e293b'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedModelId !== r.id) {
+                    (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'
+                  }
+                }}
+              >
                 <td>{r.name}</td>
                 <td>{r.model_type}</td>
                 <td>{r.version}</td>
