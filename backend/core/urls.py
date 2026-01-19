@@ -16,8 +16,14 @@ Including another URLconf
 """
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from django.http import JsonResponse
+
+def health_check(request):
+    """Simple health check endpoint for Docker container health monitoring."""
+    return JsonResponse({'status': 'healthy'}, status=200)
 
 urlpatterns = [
+    path('health/', health_check, name='health-check'),
     path('api/', include('cloud_pricing.api.urls')),
     path('api/', include('model_registry.api.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

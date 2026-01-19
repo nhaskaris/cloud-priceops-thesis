@@ -8,12 +8,20 @@ services:
       - ./backend/.env
       - ./.env            
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
     volumes:
       - ./backend:/app
       - media_data:/app/media
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
   
   front:
     container_name: front
@@ -34,8 +42,10 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
-      - front
+      backend:
+        condition: service_healthy
+      front:
+        condition: service_started
     restart: always
 
   db:
