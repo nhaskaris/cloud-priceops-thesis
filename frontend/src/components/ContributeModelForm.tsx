@@ -67,9 +67,9 @@ export default function ContributeModelForm() {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #334155' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
+      {/* Tab Navigation - always horizontal, at top */}
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'row', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #334155', alignItems: 'flex-end', background: 'transparent' }}>
         <button
           onClick={() => setActiveTab('schema')}
           style={{
@@ -104,10 +104,11 @@ export default function ContributeModelForm() {
         >
           Contribute
         </button>
+      </div>
 
       {/* Tab Content */}
       {activeTab === 'schema' ? (
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '2rem' }} className="animate-slide-up animate-delay-1">
           <h2 style={{ color: '#60a5fa', marginBottom: '1rem' }}>Database Schema Overview</h2>
           <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '1rem' }}>
             This page provides a visual overview of the database schema used for cloud pricing models. Each table and its relationships are shown to help contributors understand how data is structured and connected. Use this reference to ensure your model and metadata align with the platform's requirements.<br />
@@ -228,7 +229,6 @@ export default function ContributeModelForm() {
           </form>
         </>
       )}
-    </div>
     </div>
   )
 }
