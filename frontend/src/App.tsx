@@ -6,7 +6,6 @@ import ModelsDashboard from './components/ModelsDashboard'
 import ContributeModelForm from './components/ContributeModelForm'
 import Documentation from './components/Documentation'
 import PricingAnalyzer from './components/PricingAnalyzer'
-import SchemaVisualizer from './components/SchemaVisualizer'
 
 const BACKEND_URL = (import.meta.env.VITE_APP_BACKEND_URL as string) || 'http://localhost:8000'
 
@@ -39,7 +38,7 @@ function App() {
               <Link to="/" onClick={() => setMobileMenuOpen(false)}>Home</Link>
               <Link to="/analyze" onClick={() => setMobileMenuOpen(false)}>Analyze</Link>
               <Link to="/models" onClick={() => setMobileMenuOpen(false)}>Models</Link>
-              <Link to="/schema" onClick={() => setMobileMenuOpen(false)}>Schema</Link>
+              
               <Link to="/contribute" onClick={() => setMobileMenuOpen(false)}>Contribute</Link>
               <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Docs</Link>
               <a href={`${BACKEND_URL}/schema/swagger-ui/`} target="_blank" rel="noopener noreferrer">API</a>
@@ -51,7 +50,7 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/analyze" element={<PricingAnalyzer />} />
             <Route path="/models" element={<ModelsDashboard />} />
-            <Route path="/schema" element={<SchemaVisualizer />} />
+            // ...existing code...
             <Route path="/contribute" element={<ContributeModelForm />} />
             <Route path="/docs" element={<Documentation />} />
           </Routes>

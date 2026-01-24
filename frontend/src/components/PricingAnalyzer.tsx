@@ -96,7 +96,7 @@ export default function PricingAnalyzer() {
   const [os, setOs] = useState<string>('Linux')
   const [tenancy, setTenancy] = useState<string>('default')
   
-  // Cost Optimizer specific
+  // Cost Overview specific
   const [currentCost, setCurrentCost] = useState<string>('0.5')
 
   // Advanced prediction fields
@@ -159,10 +159,6 @@ export default function PricingAnalyzer() {
     const type = modelTypes.find((t: ModelType) => t.type === selectedType)
     setTypeDetails(type || null)
   }, [selectedType, modelTypes])
-
-  const addParam = () => {
-    setAdditionalParams([...additionalParams, { key: '', value: '' }])
-  }
 
   const updateParam = (idx: number, field: 'key' | 'value', val: string) => {
     const next = [...additionalParams]
@@ -344,8 +340,8 @@ export default function PricingAnalyzer() {
           Prediction Tools
         </h2>
         <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.6 }}>
-          Choose between two analysis modes: <strong>Cost Optimizer</strong> to find cheaper alternatives to your current setup, 
-          or <strong>Advanced Prediction</strong> for detailed estimates with custom parameters.
+          Choose between two analysis modes: <strong>Cost Overview</strong> to find cheaper alternatives to your current setup, 
+          or <strong>Prediction</strong> for detailed estimates with custom parameters.
         </p>
 
         {/* Mode Toggle */}
@@ -364,7 +360,7 @@ export default function PricingAnalyzer() {
             transition: 'all 0.2s',
           }}
         >
-          Cost Optimizer
+          Cost Overview
         </button>
         <button
           onClick={() => setAnalysisMode('advanced')}
@@ -380,7 +376,7 @@ export default function PricingAnalyzer() {
             transition: 'all 0.2s',
           }}
         >
-          Advanced Prediction
+          Prediction
         </button>
       </div>
 
@@ -622,9 +618,6 @@ export default function PricingAnalyzer() {
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                  Additional Parameters
-                </label>
                 {additionalParams.map((param, idx) => (
                   <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <input
@@ -668,21 +661,7 @@ export default function PricingAnalyzer() {
                     </button>
                   </div>
                 ))}
-                <button
-                  onClick={addParam}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    background: '#334155',
-                    color: '#cbd5e1',
-                    border: 'none',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    marginTop: '0.5rem',
-                  }}
-                >
-                  + Add Parameter
-                </button>
+        
               </div>
             </>
           )}

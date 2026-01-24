@@ -10,6 +10,8 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   MarkerType,
+  Handle,
+  Position,
   type XYPosition,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
@@ -170,15 +172,15 @@ const SCHEMA_DEFINITION: TableSchema[] = [
 
 const TABLE_POSITIONS: { [key: string]: XYPosition } = {
   CloudProvider: { x: 0, y: 0 },
-  CloudService: { x: -500, y: 300 },
-  Region: { x: 500, y: 300 },
-  PricingModel: { x: -500, y: 600 },
-  Currency: { x: 500, y: 600 },
-  NormalizedPricingData: { x: 0, y: 900 },
-  RawPricingData: { x: 0, y: 1200 },
-  APICallLog: { x: -700, y: 900 },
-  MLEngine: { x: 700, y: 900 },
-  ModelCoefficient: { x: 700, y: 1200 },
+  CloudService: { x: -600, y: 400 },
+  Region: { x: 600, y: 400 },
+  PricingModel: { x: -600, y: 900 },
+  Currency: { x: 600, y: 900 },
+  NormalizedPricingData: { x: 0, y: 1200 },
+  RawPricingData: { x: 0, y: 1800 },
+  APICallLog: { x: -900, y: 1200 },
+  MLEngine: { x: 900, y: 1200 },
+  ModelCoefficient: { x: 900, y: 1800 },
 }
 
 const TableNode: React.FC<{ data: { table: TableSchema; isSelected: boolean } }> = ({
@@ -192,6 +194,9 @@ const TableNode: React.FC<{ data: { table: TableSchema; isSelected: boolean } }>
         boxShadow: isSelected ? `0 0 10px ${table.color}` : 'none',
       }}
     >
+      <Handle type="target" position={Position.Top} className="handle handle-target" />
+      <Handle type="source" position={Position.Bottom} className="handle handle-source" />
+
       <div className="node-header" style={{ backgroundColor: table.color }}>
         <h3>{table.name}</h3>
       </div>
@@ -212,7 +217,7 @@ const TableNode: React.FC<{ data: { table: TableSchema; isSelected: boolean } }>
 
 export default function SchemaVisualizer() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
-  const [showMiniMap, setShowMiniMap] = useState(true)
+  const [showMiniMap, setShowMiniMap] = useState(false)
 
   // Create nodes from schema
   const initialNodes: Node[] = useMemo(() => {
@@ -232,21 +237,38 @@ export default function SchemaVisualizer() {
     SCHEMA_DEFINITION.forEach((table) => {
       table.fields.forEach((field) => {
         if (field.foreignKey) {
-          const edgeId = `${table.name}-${field.foreignKey}`
+          // Skip self-referencing edges
+          if (field.foreignKey === table.name) {
+            return
+          }
+
+          const edgeId = `${table.name}-${field.foreignKey}-${field.name}`
           if (!edgeSet.has(edgeId)) {
+            const isActive = table.name === selectedTable || field.foreignKey === selectedTable
+
             edges.push({
               id: edgeId,
               source: field.foreignKey,
               target: table.name,
-              markerEnd: { type: MarkerType.ArrowClosed },
-              animated: table.name === selectedTable || field.foreignKey === selectedTable,
+              type: 'smoothstep',
+              markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
+              animated: isActive,
+              label: field.name,
+              labelBgPadding: [6, 4],
+              labelBgBorderRadius: 4,
+              labelBgStyle: {
+                fill: isActive ? '#fef2f2' : '#f8fafc',
+                stroke: isActive ? '#dc2626' : '#cbd5e1',
+                strokeWidth: 1,
+              },
+              labelStyle: {
+                fill: '#0f172a',
+                fontWeight: 700,
+                fontSize: 11,
+              },
               style: {
-                stroke:
-                  table.name === selectedTable || field.foreignKey === selectedTable
-                    ? '#FF6B6B'
-                    : '#ccc',
-                strokeWidth:
-                  table.name === selectedTable || field.foreignKey === selectedTable ? 3 : 1.5,
+                stroke: isActive ? '#dc2626' : '#94a3b8',
+                strokeWidth: isActive ? 3 : 2,
               },
             })
             edgeSet.add(edgeId)
@@ -312,11 +334,26 @@ export default function SchemaVisualizer() {
           onConnect={onConnect}
           nodeTypes={{ default: TableNode }}
           fitView
+          fitViewOptions={{ padding: 0.3 }}
+          minZoom={0.2}
+          maxZoom={1.5}
         >
           <Background color="#aaa" gap={16} />
           <Controls />
           {showMiniMap && <MiniMap />}
         </ReactFlow>
+      </div>
+
+      <div className="legend">
+        <div className="legend-title">Foreign Key Direction</div>
+        <div className="legend-item">
+          <span className="legend-arrow">Parent → Child</span>
+          <span className="legend-note">Arrows start at the referenced table (green dot) and end at the FK owner (blue dot)</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-arrow">Label</span>
+          <span className="legend-note">Shows the FK column name</span>
+        </div>
       </div>
 
       <div className="schema-sidebar">

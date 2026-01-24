@@ -87,7 +87,7 @@ export default function Documentation() {
                 <li>Navigate to the <Link to="/analyze" style={{ color: '#60a5fa' }}>Analyze page</Link></li>
                 <li>Choose a mode:
                   <ul style={{ marginTop: '0.5rem', color: '#94a3b8' }}>
-                    <li><strong style={{ color: '#cbd5e1' }}>Cost Optimizer:</strong> Find cheaper alternatives to your current setup</li>
+                    <li><strong style={{ color: '#cbd5e1' }}>Cost Overview:</strong> Find cheaper alternatives to your current setup</li>
                     <li><strong style={{ color: '#cbd5e1' }}>Advanced Prediction:</strong> Get detailed predictions with full control over parameters</li>
                   </ul>
                 </li>
