@@ -547,7 +547,7 @@ export default function PricingAnalyzer() {
                   }}
                 >
                   {modelTypes.length === 0 && <option>Loading model types...</option>}
-                  {modelTypes.map((t: ModelType) => (
+                  {[...modelTypes.reduce((acc, t) => acc.set(t.type, t), new Map<string, ModelType>()).values()].map((t: ModelType) => (
                     <option key={t.type} value={t.type}>
                       {t.type} ({t.count} model{t.count !== 1 ? 's' : ''})
                     </option>

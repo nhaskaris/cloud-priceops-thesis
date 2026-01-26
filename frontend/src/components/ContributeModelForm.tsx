@@ -16,16 +16,29 @@ export default function ContributeModelForm() {
   const [mape, setMape] = useState<string>('')
   const [rmse, setRmse] = useState<string>('')
   const [samples, setSamples] = useState<string>('')
-  const [isActive, setIsActive] = useState<boolean>(false)
+  // Removed isActive state
   const [metadata] = useState<string>('{"algorithm":"Ridge"}')
-  const [modelFile] = useState<File | null>(null)
-  const [encoderFile] = useState<File | null>(null)
-  const [scalerFile] = useState<File | null>(null)
+  const [modelFile, setModelFile] = useState<File | null>(null)
+  const [encoderFile, setEncoderFile] = useState<File | null>(null)
+  const [scalerFile, setScalerFile] = useState<File | null>(null)
 
+  const [coefficientsFile, setCoefficientsFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
 
   const onSubmit = async (e: React.FormEvent) => {
+        // Parse coefficients JSON if provided
+        let coefficients = ''
+        if (coefficientsFile) {
+          try {
+            const text = await coefficientsFile.text()
+            JSON.parse(text) // Validate JSON
+            coefficients = text
+          } catch (err) {
+            setError('Invalid coefficients JSON file')
+            return
+          }
+        }
     e.preventDefault()
     setError(null)
     setOk(null)
@@ -46,11 +59,12 @@ export default function ContributeModelForm() {
     if (mape) fd.append('mape', mape)
     if (rmse) fd.append('rmse', rmse)
     if (samples) fd.append('training_sample_size', samples)
-    fd.append('is_active', String(isActive))
+    // Removed is_active from form data
     if (metadata) fd.append('metadata', metadata)
     fd.append('model_binary', modelFile)
     if (encoderFile) fd.append('encoder_binary', encoderFile)
     if (scalerFile) fd.append('scaler_binary', scalerFile)
+    if (coefficients) fd.append('coefficients', coefficients)
 
     try {
       const res = await fetch(`${BACKEND_URL}/engines/`, { method: 'POST', body: fd })
@@ -183,49 +197,87 @@ export default function ContributeModelForm() {
           {error && <div className="error" style={{ margin: '1rem 0' }}>{error}</div>}
           {ok && <div className="best" style={{ margin: '1rem 0' }}>{ok}</div>}
 
-          <form onSubmit={onSubmit} className="form" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            {/* Section 1: Basic Info */}
-            <div style={{ gridColumn: '1 / -1', background: '#0f172a', padding: '0.75rem 1rem', borderRadius: 6, marginBottom: '0.5rem', border: '1px solid #334155' }}>
-              <span style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.875rem' }}>SECTION 1: BASIC INFORMATION</span>
+          <form onSubmit={onSubmit} className="form" style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '1.5rem 2rem',
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: 10,
+            padding: '2rem',
+            marginBottom: '2rem',
+            width: '100%',
+            boxSizing: 'border-box',
+          }}>
+            <div style={{
+              gridColumn: '1 / -1',
+              marginBottom: '2rem',
+              background: 'linear-gradient(90deg, #1e293b 80%, #334155 100%)',
+              borderRadius: 12,
+              border: '1px solid #334155',
+              boxShadow: '0 2px 12px 0 #0f172a44',
+              padding: '2rem 2.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.5rem',
+            }}>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: '1.2rem', letterSpacing: 1 }}>Model & File Uploads</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <label style={{ color: '#cbd5e1', fontWeight: 600, fontSize: '1rem' }}>Model Binary (.pkl) <span style={{ color: '#f87171' }}>*</span></label>
+                  <input type="file" accept=".pkl" required onChange={e => setModelFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} style={{ padding: '0.7rem', borderRadius: 8, border: '1.5px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '1rem' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <label style={{ color: '#cbd5e1', fontWeight: 600, fontSize: '1rem' }}>Encoder Binary (.pkl, optional)</label>
+                  <input type="file" accept=".pkl" onChange={e => setEncoderFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} style={{ padding: '0.7rem', borderRadius: 8, border: '1.5px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '1rem' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <label style={{ color: '#cbd5e1', fontWeight: 600, fontSize: '1rem' }}>Scaler Binary (.pkl, optional)</label>
+                  <input type="file" accept=".pkl" onChange={e => setScalerFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} style={{ padding: '0.7rem', borderRadius: 8, border: '1.5px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '1rem' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <label style={{ color: '#cbd5e1', fontWeight: 600, fontSize: '1rem' }}>Coefficients JSON (.json, optional)</label>
+                  <input type="file" accept="application/json,.json" onChange={e => setCoefficientsFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} style={{ padding: '0.7rem', borderRadius: 8, border: '1.5px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: '1rem' }} />
+                  <span style={{ color: '#64748b', fontSize: '0.95rem', marginTop: 2 }}>Format: Array of objects with <b>feature_name</b>, <b>value</b>, and optional <b>p_value</b>.</span>
+                </div>
+              </div>
             </div>
-            
-            <label style={{ color: '#cbd5e1' }}>
-              Name
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="AWS_Compute_Pricing" required />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>
-              Model Type
-              <input value={modelType} onChange={e => setModelType(e.target.value)} placeholder="Regression" required />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>
-              Version
-              <input value={version} onChange={e => setVersion(e.target.value)} placeholder="2025.12.26.01" required />
-            </label>
-
-            {/* Section 2: Performance Metrics */}
-            <div style={{ gridColumn: '1 / -1', background: '#0f172a', padding: '0.75rem 1rem', borderRadius: 6, marginTop: '1rem', marginBottom: '0.5rem', border: '1px solid #334155' }}>
-              <span style={{ color: '#60a5fa', fontWeight: 600, fontSize: '0.875rem' }}>SECTION 2: PERFORMANCE METRICS</span>
+            <div style={{ gridColumn: '1 / -1', margin: '1.5rem 0 0.5rem 0' }}>
+              <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: '1.1rem', letterSpacing: 1 }}>SECTION 1: BASIC INFORMATION</span>
             </div>
-            
-            <label style={{ color: '#cbd5e1' }}>
-              R²
-              <input type="number" step="0.0001" min="0" max="1" value={r2} onChange={e => setR2(e.target.value)} placeholder="0.92" />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>
-              MAPE (%)
-              <input type="number" step="0.01" value={mape} onChange={e => setMape(e.target.value)} placeholder="41.72" />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>
-              RMSE
-              <input type="number" step="0.0001" value={rmse} onChange={e => setRmse(e.target.value)} placeholder="0.1234" />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>
-              Training Samples
-              <input type="number" value={samples} onChange={e => setSamples(e.target.value)} placeholder="50000" />
-            </label>
-            <label style={{ color: '#cbd5e1', alignSelf: 'end' }}>
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} /> Active (Champion)
-            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>Name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="AWS_Compute_Pricing" required style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>Model Type</label>
+              <input value={modelType} onChange={e => setModelType(e.target.value)} placeholder="Regression" required style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>Version</label>
+              <input value={version} onChange={e => setVersion(e.target.value)} placeholder="2025.12.26.01" required style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ gridColumn: '1 / -1', margin: '1.5rem 0 0.5rem 0' }}>
+              <span style={{ color: '#60a5fa', fontWeight: 700, fontSize: '1.1rem', letterSpacing: 1 }}>SECTION 2: PERFORMANCE METRICS</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>R²</label>
+              <input type="number" step="0.0001" min="0" max="1" value={r2} onChange={e => setR2(e.target.value)} placeholder="0.92" style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>MAPE (%)</label>
+              <input type="number" step="0.01" value={mape} onChange={e => setMape(e.target.value)} placeholder="41.72" style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>RMSE</label>
+              <input type="number" step="0.0001" value={rmse} onChange={e => setRmse(e.target.value)} placeholder="0.1234" style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ color: '#cbd5e1', fontWeight: 600 }}>Training Samples</label>
+              <input type="number" value={samples} onChange={e => setSamples(e.target.value)} placeholder="50000" style={{ padding: '0.75rem', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: '1rem' }} />
+            </div>
           </form>
         </>
       )}
