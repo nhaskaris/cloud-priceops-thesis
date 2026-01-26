@@ -5,14 +5,11 @@ export default function Landing() {
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Hero Section */}
       <div className="page-header" style={{ textAlign: 'center', padding: '1rem 0' }}>
-        <div className="page-header-breadcrumb" style={{ marginLeft: 'auto', marginRight: 'auto' }}>
-          Platform Home
-        </div>
         <h1 className="page-header-title" style={{ fontSize: '3.5rem', marginBottom: '1rem', fontWeight: 800 }}>
           Cloud PriceOps
         </h1>
         <p className="page-header-subtitle" style={{ fontSize: '1.2rem', color: '#94a3b8', maxWidth: '600px', margin: '0 auto' }}>
-          AI-powered cloud infrastructure cost optimization and prediction platform
+          A FinOps oriented platform for cloud infrastructure pricing prediction, analysis, and model contribution.
         </p>
       </div>
 
@@ -23,10 +20,12 @@ export default function Landing() {
             <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>Instant Predictions</h4>
             <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Get accurate hourly cost estimates in seconds</p>
           </div>
-          <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
-            <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>IaaS Specialized</h4>
-            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Models trained on real infrastructure pricing data</p>
-          </div>
+            <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
+            <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>Data-Driven Coverage</h4>
+            <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>
+              Models trained on real pricing data for all available cloud resources
+            </p>
+            </div>
           <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: 10, border: '1px solid #334155', textAlign: 'center' }}>
             <h4 style={{ color: '#f1f5f9', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>Model Comparison</h4>
             <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, lineHeight: 1.5 }}>Track R², MAPE, and performance metrics</p>
@@ -54,14 +53,10 @@ export default function Landing() {
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ color: '#cbd5e1', marginBottom: '0.75rem', display: 'flex', alignItems: 'flex-start' }}>
                 <span style={{ color: '#60a5fa', fontWeight: 700, marginRight: '0.75rem', fontSize: '1.25rem' }}>1</span>
-                <span><strong>Simple Mode:</strong> Enter current specs and cost to find cheaper alternatives</span>
+                <span>Get price predictions for your cloud resources</span>
               </div>
               <div style={{ color: '#cbd5e1', marginBottom: '0.75rem', display: 'flex', alignItems: 'flex-start' }}>
                 <span style={{ color: '#60a5fa', fontWeight: 700, marginRight: '0.75rem', fontSize: '1.25rem' }}>2</span>
-                <span><strong>Advanced Mode:</strong> Get detailed predictions with model selection and payment options</span>
-              </div>
-              <div style={{ color: '#cbd5e1', marginBottom: '0.75rem', display: 'flex', alignItems: 'flex-start' }}>
-                <span style={{ color: '#60a5fa', fontWeight: 700, marginRight: '0.75rem', fontSize: '1.25rem' }}>3</span>
                 <span>Compare with actual database pricing and see savings opportunities</span>
               </div>
             </div>

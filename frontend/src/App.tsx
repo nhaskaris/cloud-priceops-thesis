@@ -17,7 +17,9 @@ function App() {
       <div className="App">
         <header className="App-header">
           <div className="header-inner">
-            <h1>Cloud PriceOps</h1>
+            <Link to="/" className="app-title" onClick={() => setMobileMenuOpen(false)}>
+              <h1>Cloud PriceOps</h1>
+            </Link>
             
             {/* Hamburger button for mobile */}
             <button 

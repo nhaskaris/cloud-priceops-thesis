@@ -339,10 +339,10 @@ export default function PricingAnalyzer() {
         <h2 style={{ color: '#f1f5f9', fontSize: '1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           Prediction Tools
         </h2>
-        <p style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.6 }}>
-          Choose between two analysis modes: <strong>Cost Overview</strong> to find cheaper alternatives to your current setup, 
-          or <strong>Prediction</strong> for detailed estimates with custom parameters.
-        </p>
+        <ul style={{ color: '#cbd5e1', marginBottom: '1.5rem', fontSize: '0.95rem', lineHeight: 1.6, paddingLeft: '1.5rem' }}>
+          <li>Get price predictions for your cloud resources</li>
+          <li>Compare with actual database pricing and see savings opportunities</li>
+        </ul>
 
         {/* Mode Toggle */}
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
