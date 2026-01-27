@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import ReactFlow, {
   type Node,
   type Edge,
@@ -13,23 +13,24 @@ import ReactFlow, {
   Handle,
   Position,
   type XYPosition,
-} from 'reactflow'
-import 'reactflow/dist/style.css'
-import '../styles/SchemaVisualizer.css'
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 
+// --- Interfaces ---
 interface TableField {
-  name: string
-  type: string
-  nullable?: boolean
-  foreignKey?: string
+  name: string;
+  type: string;
+  nullable?: boolean;
+  foreignKey?: string;
 }
 
 interface TableSchema {
-  name: string
-  fields: TableField[]
-  color?: string
+  name: string;
+  fields: TableField[];
+  color?: string;
 }
 
+// --- Schema Data ---
 const SCHEMA_DEFINITION: TableSchema[] = [
   {
     name: 'CloudProvider',
@@ -171,235 +172,157 @@ const SCHEMA_DEFINITION: TableSchema[] = [
 ]
 
 const TABLE_POSITIONS: { [key: string]: XYPosition } = {
-  CloudProvider: { x: 0, y: 0 },
-  CloudService: { x: -600, y: 400 },
-  Region: { x: 600, y: 400 },
-  PricingModel: { x: -600, y: 900 },
-  Currency: { x: 600, y: 900 },
-  NormalizedPricingData: { x: 0, y: 1200 },
-  RawPricingData: { x: 0, y: 1800 },
-  APICallLog: { x: -900, y: 1200 },
-  MLEngine: { x: 900, y: 1200 },
-  ModelCoefficient: { x: 900, y: 1800 },
-}
+  CloudProvider: { x: 500, y: 0 },
+  PricingModel: { x: 100, y: 50 },
+  Currency: { x: 900, y: 50 },
+  
+  CloudService: { x: 200, y: 250 },
+  Region: { x: 800, y: 250 },
+  
+  APICallLog: { x: 100, y: 500 },
+  NormalizedPricingData: { x: 500, y: 550 },
+  RawPricingData: { x: 900, y: 500 },
+  
+  MLEngine: { x: 300, y: 850 },
+  ModelCoefficient: { x: 700, y: 850 },
+};
 
-const TableNode: React.FC<{ data: { table: TableSchema; isSelected: boolean } }> = ({
-  data: { table, isSelected },
-}) => {
+// --- Custom Node Component ---
+const TableNode = ({ data }: { data: { table: TableSchema; isSelected: boolean } }) => {
+  const { table, isSelected } = data;
   return (
     <div
       className={`schema-node ${isSelected ? 'selected' : ''}`}
       style={{
-        borderColor: table.color,
-        boxShadow: isSelected ? `0 0 10px ${table.color}` : 'none',
+        background: '#fff',
+        border: `2px solid ${table.color}`,
+        borderRadius: '8px',
+        minWidth: '220px',
+        boxShadow: isSelected ? `0 0 15px ${table.color}` : '0 4px 6px rgba(0,0,0,0.1)',
+        fontFamily: 'monospace',
       }}
     >
-      <Handle type="target" position={Position.Top} className="handle handle-target" />
-      <Handle type="source" position={Position.Bottom} className="handle handle-source" />
+      {/* Target on Left, Source on Right to prevent overlap loops */}
+      <Handle type="target" position={Position.Left} style={{ background: '#555' }} />
+      <Handle type="source" position={Position.Right} style={{ background: '#555' }} />
 
-      <div className="node-header" style={{ backgroundColor: table.color }}>
-        <h3>{table.name}</h3>
+      <div
+        style={{
+          backgroundColor: table.color,
+          padding: '8px 12px',
+          color: '#fff',
+          fontWeight: 'bold',
+          borderTopLeftRadius: '6px',
+          borderTopRightRadius: '6px',
+          fontSize: '14px',
+          textAlign: 'center',
+        }}
+      >
+        {table.name}
       </div>
-      <div className="node-content">
+      <div style={{ padding: '8px' }}>
         {table.fields.map((field) => (
-          <div key={field.name} className="field">
-            <span className="field-name">{field.name}</span>
-            <span className={`field-type ${field.type === 'FK' ? 'foreign-key' : ''}`}>
+          <div
+            key={field.name}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              padding: '2px 0',
+              fontSize: '11px',
+              borderBottom: '1px solid #eee',
+            }}
+          >
+            <span style={{ fontWeight: field.type === 'FK' ? 'bold' : 'normal' }}>
+              {field.name}
+            </span>
+            <span style={{ color: field.type === 'FK' ? '#2563eb' : '#666' }}>
               {field.type}
-              {field.nullable ? '?' : ''}
             </span>
           </div>
         ))}
       </div>
     </div>
-  )
-}
+  );
+};
+
+// Define node types outside component to prevent re-renders
+const nodeTypes = { tableNode: TableNode };
 
 export default function SchemaVisualizer() {
-  const [selectedTable, setSelectedTable] = useState<string | null>(null)
-  const [showMiniMap, setShowMiniMap] = useState(false)
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
 
-  // Create nodes from schema
+  // Generate Nodes
   const initialNodes: Node[] = useMemo(() => {
     return SCHEMA_DEFINITION.map((table) => ({
       id: table.name,
+      type: 'tableNode', // Critical: Use the custom type
       data: { table, isSelected: table.name === selectedTable },
-      position: TABLE_POSITIONS[table.name] || [0, 0],
-      type: 'default',
-    }))
-  }, [selectedTable])
+      position: TABLE_POSITIONS[table.name] || { x: 0, y: 0 },
+    }));
+  }, [selectedTable]);
 
-  // Create edges from relationships
+  // Generate Edges
   const initialEdges: Edge[] = useMemo(() => {
-    const edges: Edge[] = []
-    const edgeSet = new Set<string>()
-
+    const edges: Edge[] = [];
     SCHEMA_DEFINITION.forEach((table) => {
       table.fields.forEach((field) => {
-        if (field.foreignKey) {
-          // Skip self-referencing edges
-          if (field.foreignKey === table.name) {
-            return
-          }
-
-          const edgeId = `${table.name}-${field.foreignKey}-${field.name}`
-          if (!edgeSet.has(edgeId)) {
-            const isActive = table.name === selectedTable || field.foreignKey === selectedTable
-
-            edges.push({
-              id: edgeId,
-              source: field.foreignKey,
-              target: table.name,
-              type: 'smoothstep',
-              markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
-              animated: isActive,
-              label: field.name,
-              labelBgPadding: [6, 4],
-              labelBgBorderRadius: 4,
-              labelBgStyle: {
-                fill: isActive ? '#fef2f2' : '#f8fafc',
-                stroke: isActive ? '#dc2626' : '#cbd5e1',
-                strokeWidth: 1,
-              },
-              labelStyle: {
-                fill: '#0f172a',
-                fontWeight: 700,
-                fontSize: 11,
-              },
-              style: {
-                stroke: isActive ? '#dc2626' : '#94a3b8',
-                strokeWidth: isActive ? 3 : 2,
-              },
-            })
-            edgeSet.add(edgeId)
-          }
+        if (field.foreignKey && field.foreignKey !== table.name) {
+          const isActive = table.name === selectedTable || field.foreignKey === selectedTable;
+          
+          edges.push({
+            id: `e-${field.foreignKey}-${table.name}-${field.name}`,
+            source: field.foreignKey, // Arrows point FROM referenced table
+            target: table.name,      // TO the table with the FK
+            type: 'step',            // Cleaner ERD style
+            label: field.name,
+            animated: isActive,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: isActive ? '#2563eb' : '#94a3b8',
+            },
+            style: {
+              stroke: isActive ? '#2563eb' : '#cbd5e1',
+              strokeWidth: isActive ? 3 : 1.5,
+            },
+            labelStyle: { fontSize: 10, fill: '#334155', fontWeight: 600 },
+          });
         }
-      })
-    })
+      });
+    });
+    return edges;
+  }, [selectedTable]);
 
-    return edges
-  }, [selectedTable])
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-
-  React.useEffect(() => {
-    setNodes(initialNodes)
-  }, [selectedTable, setNodes, initialNodes])
-
-  React.useEffect(() => {
-    setEdges(initialEdges)
-  }, [selectedTable, setEdges, initialEdges])
+  // Sync state when selection changes
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [selectedTable, initialNodes, initialEdges, setNodes, setEdges]);
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
-    [setEdges],
-  )
-
-  const handleTableClick = (tableName: string) => {
-    setSelectedTable(selectedTable === tableName ? null : tableName)
-  }
-
-  const getTableStats = (tableName: string) => {
-    const table = SCHEMA_DEFINITION.find((t) => t.name === tableName)
-    if (!table) return { fields: 0, fks: 0 }
-    const fks = table.fields.filter((f) => f.type === 'FK').length
-    return { fields: table.fields.length, fks }
-  }
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
 
   return (
-    <div className="schema-visualizer-container">
-      <div className="visualizer-header">
-        <h2>Database Schema Overview</h2>
-        <div className="header-controls">
-          <button
-            className="control-btn"
-            onClick={() => setShowMiniMap(!showMiniMap)}
-            title="Toggle minimap"
-          >
-            🗺️ Minimap
-          </button>
-          <button className="control-btn" title="Reset view">
-            ↺ Reset
-          </button>
-        </div>
-      </div>
-
-      <div className="visualizer-content">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={{ default: TableNode }}
-          fitView
-          fitViewOptions={{ padding: 0.3 }}
-          minZoom={0.2}
-          maxZoom={1.5}
-        >
-          <Background color="#aaa" gap={16} />
-          <Controls />
-          {showMiniMap && <MiniMap />}
-        </ReactFlow>
-      </div>
-
-      <div className="legend">
-        <div className="legend-title">Foreign Key Direction</div>
-        <div className="legend-item">
-          <span className="legend-arrow">Parent → Child</span>
-          <span className="legend-note">Arrows start at the referenced table (green dot) and end at the FK owner (blue dot)</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-arrow">Label</span>
-          <span className="legend-note">Shows the FK column name</span>
-        </div>
-      </div>
-
-      <div className="schema-sidebar">
-        <h3>Tables ({SCHEMA_DEFINITION.length})</h3>
-        <div className="table-list">
-          {SCHEMA_DEFINITION.map((table) => {
-            const stats = getTableStats(table.name)
-            return (
-              <div
-                key={table.name}
-                className={`table-item ${selectedTable === table.name ? 'active' : ''}`}
-                onClick={() => handleTableClick(table.name)}
-                style={{
-                  borderLeftColor: table.color,
-                }}
-              >
-                <div className="table-name">{table.name}</div>
-                <div className="table-stats">
-                  <span>{stats.fields} fields</span>
-                  {stats.fks > 0 && <span>{stats.fks} FKs</span>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {selectedTable && (
-          <div className="selected-table-info">
-            <h4>Details: {selectedTable}</h4>
-            <div className="table-details">
-              {SCHEMA_DEFINITION.find((t) => t.name === selectedTable)?.fields.map((field) => (
-                <div key={field.name} className="detail-row">
-                  <span className="detail-name">{field.name}</span>
-                  <span className={`detail-type ${field.type === 'FK' ? 'fk' : ''}`}>
-                    {field.type}
-                  </span>
-                  {field.nullable && <span className="nullable">NULL</span>}
-                  {field.foreignKey && (
-                    <span className="fk-ref">→ {field.foreignKey}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+    <div style={{ width: '100%', height: '800px', background: '#f8fafc' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        onNodeClick={(_, node) => setSelectedTable(node.id)}
+        onPaneClick={() => setSelectedTable(null)}
+        fitView
+      >
+        <Background color="#e2e8f0" gap={20} />
+        <Controls />
+        <MiniMap />
+      </ReactFlow>
     </div>
-  )
+  );
 }
