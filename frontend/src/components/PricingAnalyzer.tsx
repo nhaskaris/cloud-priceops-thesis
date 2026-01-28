@@ -1,4 +1,47 @@
 import { useEffect, useState } from 'react'
+// Simple bar chart component for feature importances
+function FeatureImportanceChart({ coefficients }: { coefficients: Record<string, number> }) {
+  // Sort features by absolute value descending
+  const sorted = Object.entries(coefficients)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 12) // show top 12
+
+  // Find max absolute value for scaling
+  const maxAbs = Math.max(...sorted.map(([_, v]) => Math.abs(v)), 1)
+
+  return (
+    <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+      <h4 style={{ color: '#f1f5f9', marginBottom: '0.5rem', fontSize: '1.1rem' }}>Feature Importance</h4>
+      <div style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1rem' }}>
+        How each feature influences the predicted price (model coefficients)
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {sorted.map(([feature, value]) => (
+          <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ minWidth: 110, color: '#cbd5e1', fontWeight: 500 }}>{feature}</span>
+            <div style={{ flex: 1, height: 18, background: '#0f172a', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${(Math.abs(value) / maxAbs) * 100}%`,
+                  background: value >= 0 ? 'linear-gradient(90deg, #22d3ee, #3b82f6)' : 'linear-gradient(90deg, #f87171, #ef4444)',
+                  borderRadius: 6,
+                  position: 'absolute',
+                  left: value >= 0 ? 0 : undefined,
+                  right: value < 0 ? 0 : undefined,
+                  transition: 'width 0.3s',
+                }}
+              />
+            </div>
+            <span style={{ minWidth: 60, textAlign: 'right', color: value >= 0 ? '#3b82f6' : '#ef4444', fontWeight: 600 }}>
+              {value >= 0 ? '+' : ''}{value.toFixed(4)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 import './CostOptimizer.css'
 
 type ModelType = {
@@ -716,6 +759,8 @@ export default function PricingAnalyzer() {
               )}
 
               {predictions.map((pred, idx) => {
+                                // Show feature importance chart if coefficients exist
+                                const coefficients: Record<string, number> | undefined = (pred as any).coefficients || (pred as any).feature_importance;
                 const diff = analysisMode === 'simple' ? pred.predicted_price - parseFloat(currentCost) : 0;
                 const isCheaper = analysisMode === 'simple' && diff < 0;
                 let hasCheaperOption = false;
@@ -744,6 +789,10 @@ export default function PricingAnalyzer() {
                       marginBottom: '0.75rem',
                     }}
                   >
+                    {/* Feature Importance Chart */}
+                    {analysisMode === 'advanced' && coefficients && Object.keys(coefficients).length > 0 && (
+                      <FeatureImportanceChart coefficients={coefficients} />
+                    )}
                     {analysisMode === 'advanced' && (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>

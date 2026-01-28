@@ -17,7 +17,7 @@ import os
 # =================================================================
 
 FILE_NAME = "pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
-API_URL = "http://localhost/engines/" 
+API_URL = "http://localhost/api/engines/" 
 TARGET_COL = 'effective_price_per_hour'
 
 # Feature Configuration
@@ -257,11 +257,14 @@ model_filename = "ridge_model.pkl"
 encoder_filename = "encoder_ridge.pkl"
 scaler_filename = "scaler_ridge.pkl"
 
+
 joblib.dump(model, model_filename)
 joblib.dump(encoder, encoder_filename)
 joblib.dump(scaler, scaler_filename)
 
-# Prepare API Data
+# Extract coefficients and send as JSON string
+coef_dict = dict(zip(X.columns, model.coef_))
+coeff_list = [{"feature_name": k, "value": float(v)} for k, v in coef_dict.items()]
 payload = {
     "name": "AWS_Ridge_Pricing",
     "model_type": "Regression",
@@ -280,7 +283,8 @@ payload = {
         "test_size": 0.2,
         "scaled": True,
         "scaler_file": "scaler_ridge.pkl"
-    })
+    }),
+    "coefficients": json.dumps(coeff_list)
 }
 
 # Send Multi-part POST request

@@ -21,6 +21,10 @@ class MLEngineSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         coeffs_data = validated_data.pop('coefficients', [])
+        # If coefficients is a string (from multipart), parse it
+        if isinstance(coeffs_data, str):
+            import json
+            coeffs_data = json.loads(coeffs_data)
         engine = MLEngine.objects.create(**validated_data)
         for coeff in coeffs_data:
             ModelCoefficient.objects.create(engine=engine, **coeff)

@@ -18,7 +18,7 @@ import os
 # =================================================================
 
 FILE_NAME = "pricing_export_20251218163200_f7eccb5e-c03c-4b2a-8a4a-9c5b799edb91.csv"
-API_URL = "http://localhost/engines/" 
+API_URL = "http://localhost/api/engines/" 
 TARGET_COL = 'effective_price_per_hour'
 
 # Define columns by type to match Django Serializer output
@@ -164,6 +164,10 @@ joblib.dump(model, model_filename)
 joblib.dump(encoder, encoder_filename)
 
 # 2. Prepare API Data
+
+# Extract coefficients and flatten for multipart form-data
+coef_dict = dict(zip(X_ols.columns, model.params))
+coeff_list = [{"feature_name": k, "value": float(v)} for k, v in coef_dict.items()]
 payload = {
     "name": "AWS_Compute_Pricing",
     "model_type": "Regression",
@@ -174,7 +178,8 @@ payload = {
     "r_squared": float(model.rsquared),
     "mape": float(mape),
     "training_sample_size": int(model.nobs),
-    "is_active": "true"
+    "is_active": "true",
+    "coefficients": json.dumps(coeff_list)
 }
 
 # 3. Send Multi-part POST request
