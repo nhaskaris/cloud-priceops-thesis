@@ -716,8 +716,17 @@ export default function PricingAnalyzer() {
               )}
 
               {predictions.map((pred, idx) => {
-                const diff = analysisMode === 'simple' ? pred.predicted_price - parseFloat(currentCost) : 0
-                const isCheaper = analysisMode === 'simple' && diff < 0
+                const diff = analysisMode === 'simple' ? pred.predicted_price - parseFloat(currentCost) : 0;
+                const isCheaper = analysisMode === 'simple' && diff < 0;
+                let hasCheaperOption = false;
+                if (
+                  analysisMode === 'simple' &&
+                  Array.isArray(pred.actual_pricing_options) &&
+                  pred.actual_pricing_options.length > 0
+                ) {
+                  const currentPrice = parseFloat(currentCost);
+                  hasCheaperOption = pred.actual_pricing_options.some(opt => opt.price < currentPrice);
+                }
 
                 return (
                   <div
@@ -725,7 +734,12 @@ export default function PricingAnalyzer() {
                     style={{
                       padding: '1rem',
                       background: '#0f172a',
-                      border: analysisMode === 'simple' ? `2px solid ${isCheaper ? '#10b981' : '#ef4444'}` : '2px solid #475569',
+                      border:
+                        analysisMode === 'simple'
+                          ? hasCheaperOption
+                            ? '2px solid #10b981'
+                            : '2px solid #ef4444'
+                          : '2px solid #475569',
                       borderRadius: 8,
                       marginBottom: '0.75rem',
                     }}
@@ -747,7 +761,6 @@ export default function PricingAnalyzer() {
                             </div>
                           </div>
                         </div>
-                        
                         {pred.input_specs && (
                           <div style={{
                             paddingTop: '0.75rem',
@@ -757,19 +770,19 @@ export default function PricingAnalyzer() {
                             color: '#cbd5e1',
                           }}>
                             <div style={{ marginBottom: '0.35rem' }}>
-                              <span style={{ color: '#94a3b8' }}>Config:</span> {pred.input_specs.vcpu}x vCPU, {pred.input_specs.memory}GB RAM, {pred.input_specs.region}, {pred.input_specs.os}
+                              <span style={{ color: '#94a3b8' }}>Config:</span> {pred.input_specs?.vcpu ?? '-'}x vCPU, {pred.input_specs?.memory ?? '-'}GB RAM, {pred.input_specs?.region ?? '-'}, {pred.input_specs?.os ?? '-'}
                             </div>
                             {typeof pred.r_squared === 'number' && (
                               <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.35rem' }}>
-                                Model R²: {pred.r_squared.toFixed(4)} | MAPE: {pred.mape?.toFixed(2)}%
+                                Model R²: {pred.r_squared != null ? pred.r_squared.toFixed(4) : 'N/A'} | MAPE: {typeof pred.mape === 'number' ? pred.mape.toFixed(2) : 'N/A'}%
                               </div>
                             )}
-                            {pred.timestamp_created && (
+                            {typeof pred.timestamp_created === 'string' && pred.timestamp_created && (
                               <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
                                 Trained: {new Date(pred.timestamp_created).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </div>
                             )}
-                            {pred.created_at && (
+                            {typeof pred.created_at === 'string' && pred.created_at && (
                               <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
                                 Registered: {new Date(pred.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </div>
@@ -779,7 +792,7 @@ export default function PricingAnalyzer() {
                       </>
                     )}
 
-                    {analysisMode === 'simple' && pred.actual_pricing_options && pred.actual_pricing_options.length > 0 && (
+                    {analysisMode === 'simple' && Array.isArray(pred.actual_pricing_options) && pred.actual_pricing_options.length > 0 && (
                       <div style={{
                         paddingTop: '0.75rem',
                         borderTop: '1px solid #334155',
@@ -788,13 +801,13 @@ export default function PricingAnalyzer() {
                         <div style={{ color: '#a7f3d0', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.5rem' }}>
                           Available Options from Database:
                         </div>
-                        {pred.actual_pricing_options.map((option, optIdx) => {
+                        {pred.actual_pricing_options?.map((option, optIdx) => {
                           const optionPrice = option.price
                           const currentPrice = parseFloat(currentCost)
                           const priceDiff = optionPrice - currentPrice
                           const isCheaperOption = priceDiff < 0
-                          const priceComparisonColor = isCheaperOption ? '#10b981' : '#f87171'
-                          const borderColor = isCheaperOption ? '#10b981' : '#ef4444'
+                            const priceComparisonColor = isCheaperOption ? '#10b981' : '#f87171'
+                            const borderColor = '#334155'
 
                           return (
                             <div key={optIdx} style={{
